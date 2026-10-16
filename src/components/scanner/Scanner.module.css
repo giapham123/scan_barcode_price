@@ -1,0 +1,129 @@
+/* ---- Camera ---- */
+.viewport {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.viewport video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.frame {
+  position: absolute;
+  inset: 30% 12%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+.cameraStatus { color: var(--muted); margin: 8px 0 0; font-size: 0.9rem; }
+.cameraStatus[data-error] { color: var(--bad); }
+
+/* ---- Manual entry ---- */
+.manual label { display: block; font-weight: 600; margin-bottom: 4px; }
+.manualRow { display: flex; gap: 8px; }
+.manualRow input { flex: 1; }
+.noBarcode { margin-top: 8px; }
+
+/* ---- Result card ---- */
+.result {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left-width: 6px;
+  min-height: 120px;
+}
+.result p { margin: 0; }
+.result[data-status='found'] { border-left-color: var(--ok); }
+.result[data-status='not-found'] { border-left-color: var(--warn); }
+.result[data-status='invalid'],
+.result[data-status='error'] { border-left-color: var(--bad); }
+.resultPhoto { width: 110px; height: 110px; }
+.resultText { min-width: 0; }
+.resultTitle { font-size: 1.2rem; font-weight: 600; }
+.resultPrice { font-size: 2.2rem; font-weight: 700; color: var(--ok); font-variant-numeric: tabular-nums; }
+.resultMeta { color: var(--muted); font-size: 0.9rem; }
+.resultCode { color: var(--muted); font-size: 0.9rem; font-family: var(--mono); margin-top: 4px !important; }
+.resultAction { margin-top: 10px; }
+
+/* ---- Cart ---- */
+.cartHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cartHeader h2 { margin: 0; }
+.cartCount { font-size: 0.9rem; font-weight: 400; margin-left: 4px; color: var(--muted); }
+.cartLines { list-style: none; margin: 8px 0 0; padding: 0; }
+.cartLine {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-areas: 'photo info qty total remove';
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 6px;
+}
+.cartPhoto { grid-area: photo; width: 48px; height: 48px; }
+.cartInfo { grid-area: info; display: flex; flex-direction: column; min-width: 0; }
+.cartName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cartUnit { color: var(--muted); font-size: 0.85rem; }
+.cartQty { grid-area: qty; display: flex; align-items: center; gap: 6px; }
+.cartCountValue { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.round,
+.cartRemove {
+  font: inherit;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1;
+}
+.cartRemove { grid-area: remove; border: 0; background: transparent; color: var(--muted); }
+.cartLineTotal { grid-area: total; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+
+@keyframes flash {
+  from { background: color-mix(in srgb, var(--ok) 25%, transparent); }
+  to { background: transparent; }
+}
+.flash { animation: flash 1.2s ease-out; }
+
+.cartTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 2px solid var(--text);
+  font-size: 1.2rem;
+}
+.cartTotal strong { font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+
+/* Phones: name + remove on top, quantity + line total below. */
+@media (max-width: 480px) {
+  .cartLine {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'photo info remove' 'photo qty total';
+    row-gap: 6px;
+  }
+}
+
+/* ---- History ---- */
+.history { list-style: none; margin: 0; padding: 0; }
+.historyItem {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  align-items: baseline;
+}
+.historyName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.historyPrice { font-weight: 600; font-variant-numeric: tabular-nums; }
+.historyTime { color: var(--muted); font-size: 0.85rem; }
+.historyItem[data-status='not-found'] .historyPrice { color: var(--warn); }
+.historyItem[data-status='invalid'] .historyPrice,
+.historyItem[data-status='error'] .historyPrice { color: var(--bad); }

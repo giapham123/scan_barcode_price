@@ -1,0 +1,14 @@
+.photo {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-style: dashed;
+}
+.photo span { font-size: 0.9rem; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row label { cursor: pointer; }
+.barcode { display: flex; flex-direction: column; gap: 6px; }
+.barcode > button { align-self: flex-start; }
+.priceRow { display: grid; grid-template-columns: 1fr 90px; gap: 10px; }
+.hint { margin: 0; font-size: 0.85rem; }
+.error { margin: 0; color: var(--bad); }
+.print { margin-right: auto; }

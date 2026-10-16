@@ -1,0 +1,22 @@
+.nav {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px 16px 0;
+}
+.link {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+.link[aria-current='page'] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+@media print {
+  .nav { display: none; }
+}

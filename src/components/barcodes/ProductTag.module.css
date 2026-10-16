@@ -1,0 +1,28 @@
+/* Tags are always black on white: scanners need that contrast. */
+.tag {
+  margin: 0;
+  background: #fff;
+  color: #000;
+  border: 1px dashed #b8bec7;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  break-inside: avoid;
+  transition: transform 0.3s ease;
+  transform: rotate(var(--rotate, 0deg)) scale(var(--scale, 1));
+}
+/* Product photo, so you can compare the tag with the real item. */
+.photo {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border: 0;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+.barcode { display: block; width: 100%; height: auto; }
+.caption { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.name { font-weight: 600; }
+.price { font-weight: 700; font-size: 1.1rem; white-space: nowrap; }

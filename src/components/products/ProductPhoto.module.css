@@ -1,0 +1,11 @@
+.box {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  flex: none;
+}
+.placeholder { color: var(--muted); font-size: 0.7rem; text-align: center; padding: 2px; }
