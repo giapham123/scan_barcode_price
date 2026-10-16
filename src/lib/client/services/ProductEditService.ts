@@ -1,7 +1,9 @@
 import type { Product } from '@/domain/Product';
 import type { EventBus } from '@/lib/EventBus';
-import type { ProductApiClient } from '../api/ProductApiClient';
+import { ApiError, type ProductApiClient } from '../api/ProductApiClient';
 import type { AppEvents } from './events';
+
+const MAX_BARCODE_ATTEMPTS = 5;
 
 /**
  * The product details were saved, but the photo step failed.
@@ -54,11 +56,10 @@ export class ProductEditService {
   }
 
   async save(draft: ProductDraft, photo: PhotoChange = { kind: 'keep' }): Promise<Product> {
-    // Created only at save time, so cancelling the form never uses up a number.
     const createBarcode = !draft.barcode;
-    const barcode = draft.barcode || (await this.#api.allocateBarcode());
-
-    let product = await this.#api.save({ ...draft, barcode });
+    let product = draft.barcode
+      ? await this.#api.save({ ...draft, barcode: draft.barcode })
+      : await this.#createWithNewBarcode(draft);
 
     try {
       if (photo.kind === 'remove' && product.imageUrl) product = await this.#api.removeImage(product.barcode);
@@ -70,6 +71,23 @@ export class ProductEditService {
 
     this.#announce(product, createBarcode);
     return product;
+  }
+
+  /**
+   * Get a new in-store barcode and create the product with it. The barcode is
+   * fetched only now, so cancelling the form never uses up a number. The save is
+   * create-only: if that code is somehow already taken (409), take the next one
+   * instead of overwriting the other product.
+   */
+  async #createWithNewBarcode(draft: ProductDraft): Promise<Product> {
+    for (let attempt = 1; ; attempt++) {
+      const barcode = await this.#api.allocateBarcode();
+      try {
+        return await this.#api.save({ ...draft, barcode }, { createOnly: true });
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 409) || attempt === MAX_BARCODE_ATTEMPTS) throw err;
+      }
+    }
   }
 
   #announce(product: Product, barcodeCreated: boolean): void {

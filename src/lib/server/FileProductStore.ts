@@ -1,13 +1,18 @@
 import 'server-only';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
-import { Barcode, InvalidBarcodeError } from '@/domain/Barcode';
 import { Product, type ProductData } from '@/domain/Product';
-import { ProductNotFoundError, ProductValidationError } from './errors';
-import { IMAGE_TYPES, type ProductDetails, type ProductStore } from './ProductStore';
+import { ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
+import {
+  buildProduct,
+  IMAGE_TYPES,
+  parseBarcode,
+  SAFE_IMAGE_NAME,
+  type ProductDetails,
+  type ProductStore,
+  type SaveOptions,
+} from './ProductStore';
 
-/** Photo file names we create: "<barcode>-<timestamp>.<ext>". Anything else is refused. */
-const SAFE_IMAGE_NAME = /^\d{8,14}-\d+\.(jpg|png|webp)$/;
 const CONTENT_TYPE_BY_EXT = Object.fromEntries(Object.entries(IMAGE_TYPES).map(([type, ext]) => [ext, type]));
 
 /**
@@ -42,10 +47,11 @@ export class FileProductStore implements ProductStore {
     return (await this.#load()).get(barcode) ?? null;
   }
 
-  async save(details: ProductDetails): Promise<Product> {
+  async save(details: ProductDetails, { createOnly = false }: SaveOptions = {}): Promise<Product> {
     const barcode = parseBarcode(details.barcode);
     const products = await this.#load();
     const existing = products.get(barcode);
+    if (createOnly && existing) throw new ProductConflictError(barcode);
 
     const product = buildProduct({
       barcode,
@@ -140,23 +146,5 @@ export class FileProductStore implements ProductStore {
     };
     this.#writes = this.#writes.then(write, write);
     return this.#writes;
-  }
-}
-
-function parseBarcode(raw: unknown): string {
-  try {
-    return Barcode.parse(raw).value;
-  } catch (err) {
-    if (err instanceof InvalidBarcodeError) throw new ProductValidationError(err.message);
-    throw err;
-  }
-}
-
-function buildProduct(props: ProductData): Product {
-  try {
-    return new Product(props);
-  } catch (err) {
-    if (err instanceof TypeError) throw new ProductValidationError(err.message);
-    throw err;
   }
 }

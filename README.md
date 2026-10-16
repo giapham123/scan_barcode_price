@@ -20,11 +20,35 @@ npm run lint
 | Variable | Meaning |
 |---|---|
 | `ADMIN_PIN` | PIN needed to change prices or photos. Leave it empty and anyone with the link can change prices. |
-| `DATA_DIR` | Folder holding `products.json`, `images/` and `barcode-sequence.json` (default `./data`) |
+| `DATA_DIR` | File storage only: folder holding `products.json`, `images/` and `barcode-sequence.json` (default `./data`) |
+| `STORAGE` | `file` or `netlify-blobs`. Optional: Netlify builds pick `netlify-blobs` automatically, everything else uses `file`. |
 
 > **Phones need HTTPS for the camera.** `http://localhost` works on the computer itself. To test on a phone, run `npx cloudflared tunnel --url http://localhost:3000` and open the `https://…` link it prints.
 
-> **Hosting:** products and photos are saved as files in `DATA_DIR`, so the app needs a server with a disk that keeps its files: your own PC, a VPS, or Docker with a volume. Serverless hosts such as Vercel don't keep files between requests. To host there, write a database-backed `ProductStore` (see below).
+> **Where data is kept:** on your PC or your own server, products and photos are files in `DATA_DIR`. On Netlify, which has no permanent disk, they are kept in **Netlify Blobs** instead (see below). Both use the same `ProductStore` interface, so the rest of the app is identical.
+
+## Deploy to Netlify
+
+1. **Create the site.** In Netlify, choose **Add new project → Import an existing project → GitHub**, then pick this repository. The build settings come from `netlify.toml`, so leave them as they are.
+2. **Set the PIN before the first deploy.** Go to **Project configuration → Environment variables** and add `ADMIN_PIN`. Without it, anyone with the link can change prices.
+3. **Deploy.** Every push to `main` deploys again automatically.
+4. **Copy your products and photos** from `data/` into the site. They are not in Git. You need two values:
+   - `BLOBS_SITE_ID`: **Project configuration → General → Project ID**
+   - `BLOBS_TOKEN`: **User settings → Applications → Personal access tokens → New access token**
+
+   ```powershell
+   # PowerShell
+   $env:BLOBS_SITE_ID="..."; $env:BLOBS_TOKEN="..."; npm run upload-data
+   ```
+   ```bash
+   # Git Bash / macOS / Linux
+   BLOBS_SITE_ID=... BLOBS_TOKEN=... npm run upload-data
+   ```
+   Products already online are skipped, so running it again never overwrites prices changed on the site. Add `-- --overwrite` to replace them.
+
+On Netlify the camera works straight away, because the site is HTTPS.
+
+**If saving fails with `MissingBlobsEnvironmentError`** (in the site's function logs), add `BLOBS_SITE_ID` and `BLOBS_TOKEN` as environment variables of the site too, then redeploy. The app then uses them to reach Blobs explicitly.
 
 ## Pages
 
@@ -54,7 +78,8 @@ src/
     server/               Server-only code (marked with 'server-only')
       container.ts          builds the server services (one instance per process)
       ProductStore.ts       storage interface
-      FileProductStore.ts   products.json + images/, queued atomic writes
+      FileProductStore.ts   products.json + images/, queued atomic writes (PC / own server)
+      NetlifyBlobsProductStore.ts  Netlify Blobs: one blob per product, create-only barcode claims
       InternalBarcodeAllocator.ts  issues unique in-store barcodes
       http.ts, errors.ts    error → HTTP status, PIN check, body size limits
     client/               Browser-side code
@@ -112,7 +137,7 @@ Requests that change data need the `X-Admin-Pin` header when `ADMIN_PIN` is set.
 ## Common changes
 
 - **Currency or locale:** set `locale` and `currency` in `src/lib/config.ts`. Each product keeps its own currency.
-- **Use a database:** write a class that implements `ProductStore` (`src/lib/server/ProductStore.ts`) and return it from `createServices()` in `src/lib/server/container.ts`. Also store the allocator's counter in the database. Nothing else changes.
+- **Use a database:** write a class that implements `ProductStore` (`src/lib/server/ProductStore.ts`) and a `BarcodeAllocator`, and return them from `createServices()` in `src/lib/server/container.ts`. `NetlifyBlobsProductStore.ts` is a worked example. Nothing else changes.
 - **Support another barcode format:** add an entry to `BARCODE_FORMATS` in `src/domain/Barcode.ts`, then add the name to `WANTED_FORMATS` in `NativeCameraScanner.ts` and to the hints in `ZxingCameraScanner.ts`.
 - **React to scans elsewhere** (a beep, a receipt…): in a client component, call `useAppEvent('lookup:completed', handler)`.
-- **Back up your data:** copy the whole `DATA_DIR` folder (`products.json`, `images/`, `barcode-sequence.json`).
+- **Back up your data:** with file storage, copy the whole `DATA_DIR` folder (`products.json`, `images/`, `barcode-sequence.json`). On Netlify the data lives in Blobs; see **Project → Blobs** in the Netlify UI.

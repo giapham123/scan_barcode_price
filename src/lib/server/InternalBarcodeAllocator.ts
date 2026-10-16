@@ -2,6 +2,7 @@ import 'server-only';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { internalSequenceOf, makeInternalBarcode } from '@/domain/InternalBarcode';
+import type { BarcodeAllocator } from './BarcodeAllocator';
 
 /**
  * Hands out new in-store barcodes (2000000000015, 2000000000022, ...).
@@ -10,7 +11,7 @@ import { internalSequenceOf, makeInternalBarcode } from '@/domain/InternalBarcod
  * never issued twice — even if the product was not saved afterwards, or the
  * server restarted. Codes already used by products are skipped.
  */
-export class InternalBarcodeAllocator {
+export class InternalBarcodeAllocator implements BarcodeAllocator {
   readonly #file: string;
   readonly #store: { list(): Promise<{ barcode: string }[]> };
   #queue: Promise<unknown> = Promise.resolve();

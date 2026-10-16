@@ -55,11 +55,15 @@ export class ProductApiClient {
     return rows.map(Product.fromJSON);
   }
 
-  /** Create or update name / price / currency / unit. */
-  async save({ barcode, name, price, currency, unit }: ProductInput): Promise<Product> {
+  /**
+   * Create or update name / price / currency / unit.
+   * `createOnly`: fail with ApiError 409 instead of overwriting an existing product.
+   */
+  async save({ barcode, name, price, currency, unit }: ProductInput, { createOnly = false } = {}): Promise<Product> {
     const data = await this.#request<Record<string, unknown>>('PUT', productPath(barcode), {
       body: JSON.stringify({ name, price, currency, unit }),
       contentType: 'application/json',
+      headers: createOnly ? { 'If-None-Match': '*' } : undefined,
     });
     return Product.fromJSON(data);
   }
@@ -85,10 +89,11 @@ export class ProductApiClient {
   async #request<T>(
     method: string,
     path: string,
-    { body, contentType }: { body?: BodyInit; contentType?: string } = {},
+    options: { body?: BodyInit; contentType?: string; headers?: Record<string, string> } = {},
     isRetry = false,
   ): Promise<T> {
-    const headers: Record<string, string> = {};
+    const { body, contentType } = options;
+    const headers: Record<string, string> = { ...options.headers };
     if (contentType) headers['Content-Type'] = contentType;
     const pin = this.#pins?.get();
     if (pin) headers['X-Admin-Pin'] = pin;
@@ -99,7 +104,7 @@ export class ProductApiClient {
       this.#pins.clear();
       const entered = await this.#pins.ask(pin ? 'Wrong PIN. Enter the admin PIN:' : 'Enter the admin PIN to change products:');
       if (!entered) throw new AuthCancelledError();
-      return this.#request<T>(method, path, { body, contentType }, true);
+      return this.#request<T>(method, path, options, true);
     }
 
     const data = await res.json().catch(() => ({}));

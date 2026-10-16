@@ -1,0 +1,12 @@
+# Netlify build settings. Next.js itself is detected automatically
+# (Netlify's OpenNext adapter): no plugin needs to be listed here.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # @netlify/blobs needs Node.js 22.12 or newer.
+  NODE_VERSION = "22"
+
+# ADMIN_PIN is a secret: set it in the Netlify UI
+# (Site configuration → Environment variables), not in this file.

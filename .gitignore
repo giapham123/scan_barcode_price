@@ -43,3 +43,6 @@ next-env.d.ts
 # app data (products, photos, barcode counter) - back this folder up instead
 /data/
 !.env.example
+
+# Local Netlify folder
+.netlify

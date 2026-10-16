@@ -23,3 +23,11 @@ export class ProductValidationError extends Error {
     this.name = 'ProductValidationError';
   }
 }
+
+/** Create-only save, but a product with that barcode already exists. */
+export class ProductConflictError extends Error {
+  constructor(barcode: string) {
+    super(`Product ${barcode} already exists`);
+    this.name = 'ProductConflictError';
+  }
+}

@@ -7,7 +7,7 @@ import * as productImage from '@/app/api/products/[barcode]/image/route';
 import * as productOne from '@/app/api/products/[barcode]/route';
 import * as images from '@/app/images/[file]/route';
 import { setServicesForTesting } from '@/lib/server/container';
-import { ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
+import { ProductConflictError, ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
 import { FileProductStore } from '@/lib/server/FileProductStore';
 import { MAX_IMAGE_BYTES } from '@/lib/server/http';
 import { InternalBarcodeAllocator } from '@/lib/server/InternalBarcodeAllocator';
@@ -63,6 +63,13 @@ describe('FileProductStore', () => {
     await expect(store.setImage(GUM.barcode, JPEG, 'image/jpeg')).rejects.toBeInstanceOf(ProductNotFoundError);
     await expect(store.setImage(COLA.barcode, JPEG, 'image/gif')).rejects.toBeInstanceOf(ProductValidationError);
     expect(await store.readImage('../products.json')).toBeNull();
+  });
+
+  test('createOnly refuses an existing barcode', async () => {
+    const store = new FileProductStore({ dataDir, now });
+    await expect(store.save({ ...COLA, price: 9 }, { createOnly: true })).rejects.toBeInstanceOf(ProductConflictError);
+    expect((await store.get(COLA.barcode))?.price).toBe(1.25);
+    expect((await store.save({ ...GUM }, { createOnly: true })).name).toBe('Chewing Gum');
   });
 
   test('concurrent saves are all written', async () => {
@@ -160,6 +167,19 @@ describe('API route handlers', () => {
     const huge = new Uint8Array(MAX_IMAGE_BYTES + 1);
     expect((await productImage.PUT(req('PUT', { pin: PIN, body: huge, type: 'image/jpeg' }), params({ barcode: COLA.barcode }))).status).toBe(413);
     expect((await productImage.PUT(req('PUT', { pin: PIN, body: JPEG, type: 'image/jpeg' }), params({ barcode: GUM.barcode }))).status).toBe(404);
+  });
+
+  test('PUT with If-None-Match: * only creates (409 for an existing barcode)', async () => {
+    const body = JSON.stringify({ name: 'Other', price: 1, currency: 'USD' });
+    const put = (barcode: string) =>
+      productOne.PUT(
+        new Request('http://localhost/api', { method: 'PUT', body, headers: { 'X-Admin-Pin': PIN, 'If-None-Match': '*' } }),
+        params({ barcode }),
+      );
+    const conflict = await put(COLA.barcode);
+    expect(conflict.status).toBe(409);
+    expect((await conflict.json()).error).toMatch(/already exists/);
+    expect((await put(GUM.barcode)).status).toBe(200);
   });
 
   test('POST /api/barcodes/next returns a new in-store code', async () => {

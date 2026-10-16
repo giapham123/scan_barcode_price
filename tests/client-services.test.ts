@@ -141,14 +141,17 @@ describe('ProductApiClient', () => {
 
 describe('ProductEditService', () => {
   /** Fake API that records what was called. */
-  function fakeApi({ failUpload = false } = {}) {
+  function fakeApi({ failUpload = false, taken = [] as string[] } = {}) {
     const calls: string[] = [];
+    const codes = ['2000000000015', '2000000000022', '2000000000039'];
     const api = {
       calls,
-      allocateBarcode: async () => (calls.push('allocate'), '2000000000015'),
-      save: async (input: { barcode: string; name: string; price: number; currency: string; unit: string }) => (
-        calls.push(`save ${input.barcode}`), product({ ...input })
-      ),
+      allocateBarcode: async () => (calls.push('allocate'), codes.shift()!),
+      save: async (input: { barcode: string; name: string; price: number; currency: string; unit: string }, { createOnly = false } = {}) => {
+        calls.push(`save ${input.barcode}${createOnly ? ' (create-only)' : ''}`);
+        if (createOnly && taken.includes(input.barcode)) throw new ApiError(409, 'already exists');
+        return product({ ...input });
+      },
       uploadImage: async (barcode: string) => {
         calls.push(`upload ${barcode}`);
         if (failUpload) throw new Error('network');
@@ -187,8 +190,15 @@ describe('ProductEditService', () => {
     const saved = await new ProductEditService({ api, eventBus: bus }).save({ ...draft, barcode: null });
 
     expect(saved.barcode).toBe('2000000000015');
-    expect(api.calls).toEqual(['allocate', 'save 2000000000015']);
+    expect(api.calls).toEqual(['allocate', 'save 2000000000015 (create-only)']);
     expect(seen.map(([name]) => name)).toEqual(['product:saved', 'product:barcode-created']);
+  });
+
+  test('a generated barcode that is already taken (409) is skipped, never overwritten', async () => {
+    const api = fakeApi({ taken: ['2000000000015'] });
+    const saved = await new ProductEditService({ api }).save({ ...draft, barcode: null });
+    expect(saved.barcode).toBe('2000000000022');
+    expect(api.calls).toEqual(['allocate', 'save 2000000000015 (create-only)', 'allocate', 'save 2000000000022 (create-only)']);
   });
 
   test('a photo failure after creating reports the saved product (no duplicate on retry)', async () => {

@@ -1,7 +1,7 @@
 import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
 import { unstable_rethrow } from 'next/navigation';
-import { HttpError, ProductNotFoundError, ProductValidationError } from './errors';
+import { HttpError, ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
 
 export const MAX_JSON_BYTES = 64 * 1024;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -67,5 +67,6 @@ function toHttpError(err: unknown): HttpError {
   if (err instanceof HttpError) return err;
   if (err instanceof ProductNotFoundError) return new HttpError(404, err.message);
   if (err instanceof ProductValidationError) return new HttpError(400, err.message);
+  if (err instanceof ProductConflictError) return new HttpError(409, err.message);
   return new HttpError(500, 'Internal server error');
 }

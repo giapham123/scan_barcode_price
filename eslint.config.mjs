@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local Netlify build output (created by `netlify serve` / `netlify build`).
+    ".netlify/**",
   ]),
 ]);
 
