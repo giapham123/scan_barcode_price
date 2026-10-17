@@ -30,10 +30,16 @@ npm run lint
 
 ## Deploy to Netlify
 
-1. **Create the site.** In Netlify, choose **Add new project → Import an existing project → GitHub**, then pick this repository. The build settings come from `netlify.toml`, so leave them as they are.
-2. **Set the PIN before the first deploy.** Go to **Project configuration → Environment variables** and add `ADMIN_PIN`. Without it, anyone with the link can change prices.
-3. **Deploy.** Every push to `main` deploys again automatically.
-4. **Copy your products and photos** from `data/` into the site. They are not in Git. You need two values:
+Deploys run through **GitHub Actions** (CI/CD): every change is linted, type-checked, tested and built first, and only deployed if all of that passes.
+
+1. **Create an empty Netlify project.** In Netlify choose **Add new project → Deploy manually** and drop any small folder (it will be replaced by the first real deploy).
+   Don't use "Import from GitHub": then Netlify would also build every push itself, without the tests. If you already connected the repo that way, open **Project configuration → Build & deploy → Continuous deployment** and choose **Stop builds**.
+2. **Set the PIN.** **Project configuration → Environment variables** → add `ADMIN_PIN`. Without it, anyone with the link can change prices.
+3. **Give GitHub access to Netlify.** In the GitHub repository: **Settings → Secrets and variables → Actions → New repository secret**, and add:
+   - `NETLIFY_SITE_ID`: Netlify **Project configuration → General → Project ID**
+   - `NETLIFY_AUTH_TOKEN`: Netlify **User settings → Applications → Personal access tokens → New access token**
+4. **Push to `main`.** The **CI/CD** workflow (see the repository's **Actions** tab) checks the code and deploys to production.
+5. **Copy your products and photos** from `data/` into the site. They are not in Git. You need two values:
    - `BLOBS_SITE_ID`: **Project configuration → General → Project ID**
    - `BLOBS_TOKEN`: **User settings → Applications → Personal access tokens → New access token**
 
@@ -48,6 +54,22 @@ npm run lint
    Products already online are skipped, so running it again never overwrites prices changed on the site. Add `-- --overwrite` to replace them.
 
 On Netlify the camera works straight away, because the site is HTTPS.
+
+### CI/CD with GitHub Actions
+
+`.github/workflows/ci-cd.yml`:
+
+| When | What runs |
+|---|---|
+| Every push and pull request | **CI:** `npm ci`, lint, type-check, the unit/API tests, production build |
+| Push to `main`, after CI passes | **CD:** `netlify deploy --prod`: the live site is updated |
+| Pull request, after CI passes | **Preview:** deployed to its own address (`pr-<number>--<project>.netlify.app`); the link is posted on the pull request |
+
+- A failing check means **nothing is deployed**, so the live site keeps the last good version.
+- Without the two secrets, CI still runs and the deploy is skipped with a warning.
+- **Recommended:** protect `main` under GitHub **Settings → Branches → Add rule**, require pull requests and the **Lint, test, build** check. Then even a direct push can't skip the tests.
+- Preview deploys share the live site's Blobs data, so **a price changed on a preview changes it for real**. Use previews to look, not to edit.
+- To deploy by hand (e.g. after changing a Netlify setting): **Actions → CI/CD → Run workflow**.
 
 **If saving fails with `MissingBlobsEnvironmentError`** (in the site's function logs), add `BLOBS_SITE_ID` and `BLOBS_TOKEN` as environment variables of the site too, then redeploy. The app then uses them to reach Blobs explicitly.
 

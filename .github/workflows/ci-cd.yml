@@ -1,0 +1,129 @@
+# CI/CD for Price Scanner.
+#
+#   CI  – every push and pull request: lint, type-check, tests, production build.
+#   CD  – only after CI passes:
+#         push to main     -> deploy to Netlify production
+#         pull request     -> deploy a preview (link posted on the pull request)
+#
+# Setup (once): add repository secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID
+# (see README → "CI/CD with GitHub Actions"). Without them the deploy job is
+# skipped with a warning, so CI still works.
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run per branch / pull request; a newer push cancels an older pull-request run.
+  # Production deploys are never cancelled half-way.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  deploy:
+    name: Deploy to Netlify
+    needs: ci
+    # Pull requests from forks get no secrets, so they cannot deploy.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write # to post the preview link
+    environment:
+      name: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      IS_PRODUCTION: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - name: Check Netlify secrets
+        id: secrets
+        run: |
+          if [ -n "$NETLIFY_AUTH_TOKEN" ] && [ -n "$NETLIFY_SITE_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Deploy skipped: add the NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID repository secrets (README → CI/CD with GitHub Actions)."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        if: steps.secrets.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Build and deploy
+        id: deploy
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+        run: |
+          if [ "$IS_PRODUCTION" = "true" ]; then
+            target=(--prod)
+          else
+            target=(--alias "pr-$PR_NUMBER")
+          fi
+          # --json still prints the build log first; the result is the last JSON object.
+          npx --yes netlify-cli@27 deploy "${target[@]}" \
+            --message "${GITHUB_SHA::7}: ${COMMIT_MESSAGE%%$'\n'*}" \
+            --json | tee deploy-output.txt
+          url=$(node -e '
+            const out = require("fs").readFileSync("deploy-output.txt", "utf8");
+            const result = JSON.parse(out.slice(out.lastIndexOf("\n{") + 1));
+            console.log(result.url || result.deploy_url);
+          ')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post the preview link on the pull request
+        if: steps.secrets.outputs.ready == 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --edit-last --create-if-none \
+            --body "🔍 Preview of this pull request: $URL (commit ${GITHUB_SHA::7})"

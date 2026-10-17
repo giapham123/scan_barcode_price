@@ -1,5 +1,5 @@
-# Netlify build settings. Next.js itself is detected automatically
-# (Netlify's OpenNext adapter): no plugin needs to be listed here.
+# Netlify build settings, used both by Netlify's own builds and by the
+# GitHub Actions pipeline (.github/workflows/ci-cd.yml, `netlify deploy`).
 [build]
   command = "npm run build"
   publish = ".next"
@@ -7,6 +7,14 @@
 [build.environment]
   # @netlify/blobs needs Node.js 22.12 or newer.
   NODE_VERSION = "22"
+  # Netlify has no permanent disk: keep products and photos in Netlify Blobs.
+  # (Set explicitly so CLI builds in CI get it too; see next.config.ts.)
+  STORAGE = "netlify-blobs"
+
+# Netlify's Next.js adapter. Listed explicitly (and in devDependencies) so builds
+# made by the Netlify CLI in GitHub Actions use exactly the same adapter.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 
 # ADMIN_PIN is a secret: set it in the Netlify UI
-# (Site configuration → Environment variables), not in this file.
+# (Project configuration → Environment variables), not in this file.
