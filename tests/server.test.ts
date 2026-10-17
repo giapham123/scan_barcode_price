@@ -3,15 +3,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import * as barcodesNext from '@/app/api/barcodes/next/route';
+import * as catalogRoute from '@/app/api/catalog/[barcode]/route';
+import * as imageImport from '@/app/api/products/[barcode]/image/import/route';
 import * as productImage from '@/app/api/products/[barcode]/image/route';
 import * as productOne from '@/app/api/products/[barcode]/route';
 import * as images from '@/app/images/[file]/route';
+import { CatalogImageImporter } from '@/lib/server/catalog/CatalogImageImporter';
+import { OPEN_FACTS_IMAGE_HOSTS } from '@/lib/server/catalog/OpenFactsCatalog';
+import { CatalogUnavailableError } from '@/lib/server/catalog/ProductCatalog';
 import { setServicesForTesting } from '@/lib/server/container';
 import { ProductConflictError, ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
 import { FileProductStore } from '@/lib/server/FileProductStore';
 import { MAX_IMAGE_BYTES } from '@/lib/server/http';
 import { InternalBarcodeAllocator } from '@/lib/server/InternalBarcodeAllocator';
-import { COLA, GUM, WATER } from './support/fixtures';
+import { COLA, fakeFetch, GUM, WATER } from './support/fixtures';
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 
@@ -119,8 +124,29 @@ describe('API route handlers', () => {
 
   beforeEach(() => {
     const store = new FileProductStore({ dataDir, now });
-    setServicesForTesting({ store, allocator: new InternalBarcodeAllocator({ dataDir, store }), adminPin: PIN });
+    catalogCalls.length = 0;
+    setServicesForTesting({
+      store,
+      allocator: new InternalBarcodeAllocator({ dataDir, store }),
+      adminPin: PIN,
+      catalog: {
+        async lookup(barcode) {
+          catalogCalls.push(barcode);
+          if (barcode === '036000291452') throw new CatalogUnavailableError('rate limited');
+          return barcode === '96385074'
+            ? { barcode, name: 'Wrigley Gum', brand: 'Wrigley', quantity: null, imageUrl: null, source: { name: 'Open Food Facts', url: 'https://x' } }
+            : null;
+        },
+      },
+      catalogImages: new CatalogImageImporter({
+        allowedHosts: OPEN_FACTS_IMAGE_HOSTS,
+        maxBytes: MAX_IMAGE_BYTES,
+        userAgent: 'test',
+        fetchFn: fakeFetch(() => new Response(JPEG, { headers: { 'Content-Type': 'image/jpeg' } })).fetch,
+      }),
+    });
   });
+  const catalogCalls: string[] = [];
 
   test('get one product; 404 for an unknown one', async () => {
     const ok = await productOne.GET(req('GET'), params({ barcode: COLA.barcode }));
@@ -180,6 +206,35 @@ describe('API route handlers', () => {
     expect(conflict.status).toBe(409);
     expect((await conflict.json()).error).toMatch(/already exists/);
     expect((await put(GUM.barcode)).status).toBe(200);
+  });
+
+  test('GET /api/catalog/:barcode: found 200, unknown 404, unavailable 503, invalid 400', async () => {
+    const found = await catalogRoute.GET(req('GET'), params({ barcode: '96385074' }));
+    expect(found.status).toBe(200);
+    expect((await found.json()).name).toBe('Wrigley Gum');
+    expect((await catalogRoute.GET(req('GET'), params({ barcode: '5449000000996' }))).status).toBe(404);
+    expect((await catalogRoute.GET(req('GET'), params({ barcode: '036000291452' }))).status).toBe(503);
+    expect((await catalogRoute.GET(req('GET'), params({ barcode: '123' }))).status).toBe(400);
+  });
+
+  test('GET /api/catalog never sends in-store (20…) codes to the online database', async () => {
+    expect((await catalogRoute.GET(req('GET'), params({ barcode: '2000000000015' }))).status).toBe(404);
+    expect(catalogCalls).not.toContain('2000000000015');
+  });
+
+  test('POST …/image/import stores a photo from an allowed host; needs PIN and a known product', async () => {
+    const body = JSON.stringify({ url: 'https://images.openfoodfacts.org/images/products/1.jpg' });
+    const call = (barcode: string, pin?: string, b = body) =>
+      imageImport.POST(req('POST', { pin, body: b, type: 'application/json' }), params({ barcode }));
+
+    expect((await call(COLA.barcode)).status).toBe(401);
+    expect((await call(GUM.barcode, PIN)).status).toBe(404);
+    expect((await call(COLA.barcode, PIN, JSON.stringify({ url: 'https://evil.example/x.jpg' }))).status).toBe(400);
+    const ok = await call(COLA.barcode, PIN);
+    expect(ok.status).toBe(200);
+    const { imageUrl } = await ok.json();
+    const served = await images.GET(req('GET'), params({ file: imageUrl.split('/').pop() }));
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(JPEG);
   });
 
   test('POST /api/barcodes/next returns a new in-store code', async () => {

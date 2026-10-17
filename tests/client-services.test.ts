@@ -127,6 +127,17 @@ describe('ProductApiClient', () => {
     expect(pinStore.asked).toHaveLength(1); // remembered
   });
 
+  test('lookupCatalog: 404 means "not known", other errors are thrown', async () => {
+    const { fetch, calls } = fakeFetch((url) =>
+      url.endsWith('/96385074') ? Response.json({ barcode: '96385074', name: 'Gum' }) : url.endsWith('/5449000000996') ? Response.json({}, { status: 404 }) : Response.json({}, { status: 503 }),
+    );
+    const api = new ProductApiClient({ baseUrl: '/api', fetchFn: fetch });
+    expect((await api.lookupCatalog('96385074'))?.name).toBe('Gum');
+    expect(await api.lookupCatalog('5449000000996')).toBeNull();
+    await expect(api.lookupCatalog('036000291452')).rejects.toMatchObject({ status: 503 });
+    expect(calls[0].url).toBe('/api/catalog/96385074');
+  });
+
   test('a cancelled PIN and server errors are reported', async () => {
     const unauthorized = fakeFetch(() => Response.json({ error: 'pin' }, { status: 401 }));
     const api = new ProductApiClient({ baseUrl: '/api', pinStore: pins(null), fetchFn: unauthorized.fetch });
@@ -158,6 +169,7 @@ describe('ProductEditService', () => {
         return product({ ...COLA, barcode }, { imageUrl: `/images/${barcode}-1.jpg` });
       },
       removeImage: async (barcode: string) => (calls.push(`remove ${barcode}`), product(COLA, { imageUrl: null })),
+      importImage: async (barcode: string, url: string) => (calls.push(`import ${barcode} ${url}`), product(COLA, { imageUrl: `/images/${barcode}-2.jpg` })),
     };
     return api as typeof api & ProductApiClient;
   }
@@ -170,6 +182,13 @@ describe('ProductEditService', () => {
     await service.save(draft, { kind: 'replace', image: new Blob(['x'], { type: 'image/jpeg' }) });
     await service.save(draft, { kind: 'remove' }); // nothing to remove: the saved product has no photo
     expect(api.calls).toEqual(['save 5449000000996', 'save 5449000000996', 'upload 5449000000996', 'save 5449000000996']);
+  });
+
+  test('imports a photo from the online database when asked', async () => {
+    const api = fakeApi();
+    const saved = await new ProductEditService({ api }).save(draft, { kind: 'import', url: 'https://images.openfoodfacts.org/1.jpg' });
+    expect(api.calls).toEqual(['save 5449000000996', 'import 5449000000996 https://images.openfoodfacts.org/1.jpg']);
+    expect(saved.imageUrl).toBe('/images/5449000000996-2.jpg');
   });
 
   test('clears the cache entry and announces the change', async () => {

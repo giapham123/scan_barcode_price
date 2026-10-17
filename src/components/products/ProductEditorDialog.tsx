@@ -9,7 +9,9 @@ import { resizeImage } from '@/lib/client/imageResize';
 import { PhotoUploadError, type PhotoChange, type ProductDraft } from '@/lib/client/services/ProductEditService';
 import { config } from '@/lib/config';
 import { formatDateTime, formatPrice, labelPrintUrl } from '@/lib/format';
+import { CatalogHint } from './CatalogHint';
 import { ProductPhoto } from './ProductPhoto';
+import { useCatalogLookup } from './useCatalogLookup';
 import { useModalDialog } from './useModalDialog';
 import styles from './ProductEditorDialog.module.css';
 
@@ -44,6 +46,16 @@ export function ProductEditorDialog({ request, onClose }: Props) {
   const [preview, setPreview] = useState<string | null>(existing?.imageUrl ?? null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // New product with a real barcode: ask the online database and pre-fill what is still empty.
+  const catalog = useCatalogLookup(!existing && !createBarcode ? barcode : null, (entry) => {
+    setName((current) => current || entry.name);
+    if (entry.imageUrl) {
+      const url = entry.imageUrl;
+      setPhoto((current) => (current.kind === 'keep' ? { kind: 'import', url } : current));
+      setPreview((current) => current ?? url);
+    }
+  });
 
   const dialogRef = useModalDialog(() => {
     if (!saving) onClose(null);
@@ -132,6 +144,7 @@ export function ProductEditorDialog({ request, onClose }: Props) {
           fit="contain"
           className={styles.photo}
           placeholder="No photo yet"
+          eager
         />
         <div className={styles.row}>
           <label className="button button--ghost">
@@ -177,6 +190,7 @@ export function ProductEditorDialog({ request, onClose }: Props) {
               stick it on the product.
             </p>
           )}
+          <CatalogHint lookup={catalog} currentName={name} onUseName={setName} />
         </div>
 
         <label className="field">

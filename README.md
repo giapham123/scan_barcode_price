@@ -21,6 +21,7 @@ npm run lint
 |---|---|
 | `ADMIN_PIN` | PIN needed to change prices or photos. Leave it empty and anyone with the link can change prices. |
 | `DATA_DIR` | File storage only: folder holding `products.json`, `images/` and `barcode-sequence.json` (default `./data`) |
+| `CATALOG_CONTACT` | Optional contact (email or URL) sent to Open Food Facts in the User-Agent, as their API rules ask. Defaults to this project's GitHub page. |
 | `STORAGE` | `file` or `netlify-blobs`. Optional: Netlify builds pick `netlify-blobs` automatically, everything else uses `file`. |
 
 > **Phones need HTTPS for the camera.** `http://localhost` works on the computer itself. To test on a phone, run `npx cloudflared tunnel --url http://localhost:3000` and open the `https://…` link it prints.
@@ -49,6 +50,16 @@ npm run lint
 On Netlify the camera works straight away, because the site is HTTPS.
 
 **If saving fails with `MissingBlobsEnvironmentError`** (in the site's function logs), add `BLOBS_SITE_ID` and `BLOBS_TOKEN` as environment variables of the site too, then redeploy. The app then uses them to reach Blobs explicitly.
+
+## Unknown products: auto-fill from Open Food Facts
+
+When you scan a real product that isn't in your list and tap **Add product**, the app looks the barcode up in [Open Food Facts](https://world.openfoodfacts.org) (food), then [Open Products Facts](https://world.openproductsfacts.org) (other products). If it's found, the **name and photo are filled in**: check them and type your price. The photo is copied to your own storage when you save, so it keeps working even if the online database changes.
+
+- **Prices never come from there.** Online databases don't know your prices; you always enter them.
+- **In-store codes** (starting with 20–29) are never sent online. Every shop uses them for different things.
+- **Limits:** Open Food Facts allows about 15 product lookups per minute. Results are cached for a day (not-found results for an hour), and when the database can't be reached the form simply says so and you type the name.
+- **Attribution:** the data is © Open Food Facts contributors under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/), and photos are under [CC BY-SA](https://creativecommons.org/licenses/by-sa/3.0/). The form links to the product's page as the source.
+- To use another database, implement `ProductCatalog` (`src/lib/server/catalog/ProductCatalog.ts`) and add it in `createCatalog()` in `container.ts`.
 
 ## Pages
 
@@ -80,6 +91,7 @@ src/
       ProductStore.ts       storage interface
       FileProductStore.ts   products.json + images/, queued atomic writes (PC / own server)
       NetlifyBlobsProductStore.ts  Netlify Blobs: one blob per product, create-only barcode claims
+      catalog/              online product databases: Open Food Facts adapter, fallback, cache, photo import
       InternalBarcodeAllocator.ts  issues unique in-store barcodes
       http.ts, errors.ts    error → HTTP status, PIN check, body size limits
     client/               Browser-side code
@@ -111,8 +123,9 @@ tests/                  Vitest: domain, barcodes, client services, scanners, ser
 | Pattern | Where | Why |
 |---|---|---|
 | **Repository** | `ProductStore` (server), `ProductRepository` (browser) | Storage and lookup sources can be swapped without touching the rest |
-| **Decorator** | `CachedProductRepository` | Adds caching to any repository |
-| **Gateway / Adapter** | `ProductApiClient`, `ZxingCameraScanner` | Hides HTTP details and the ZXing library behind our own interfaces |
+| **Decorator** | `CachedProductRepository`, `CachedCatalog` | Adds caching to any repository or catalog |
+| **Chain of Responsibility** | `FallbackCatalog` | Asks the food database, then the non-food one |
+| **Gateway / Adapter** | `ProductApiClient`, `ZxingCameraScanner`, `OpenFactsCatalog` | Hides HTTP details and the ZXing library behind our own interfaces |
 | **Strategy** | `BarcodeScanner` implementations, `BARCODE_FORMATS` | Input methods and barcode rules are interchangeable |
 | **Template Method** | `CameraScanner` | Camera engines only implement frame decoding |
 | **Factory** | `ScannerFactory` | Picks the best camera engine for the browser |
@@ -133,6 +146,8 @@ Requests that change data need the `X-Admin-Pin` header when `ADMIN_PIN` is set.
 | PUT | `/api/products/:barcode/image` | upload photo (raw JPEG/PNG/WebP body, max 3 MB) |
 | DELETE | `/api/products/:barcode/image` | remove photo |
 | POST | `/api/barcodes/next` | new in-store barcode `{ barcode }` (201) |
+| GET | `/api/catalog/:barcode` | name/brand/photo from the online database (no PIN, no price); 404 unknown, 503 unavailable |
+| POST | `/api/products/:barcode/image/import` | use an online-database photo `{ url }` (only its image hosts) |
 
 ## Common changes
 

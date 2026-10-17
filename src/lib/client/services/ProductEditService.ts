@@ -19,8 +19,12 @@ export class PhotoUploadError extends Error {
   }
 }
 
-/** What to do with the photo: keep it, remove it, or upload a new one. */
-export type PhotoChange = { kind: 'keep' } | { kind: 'remove' } | { kind: 'replace'; image: Blob };
+/** What to do with the photo: keep it, remove it, upload a new one, or import one from the online database. */
+export type PhotoChange =
+  | { kind: 'keep' }
+  | { kind: 'remove' }
+  | { kind: 'replace'; image: Blob }
+  | { kind: 'import'; url: string };
 
 export interface ProductDraft {
   /** null = the product has none; a new in-store barcode is created on save. */
@@ -64,6 +68,7 @@ export class ProductEditService {
     try {
       if (photo.kind === 'remove' && product.imageUrl) product = await this.#api.removeImage(product.barcode);
       else if (photo.kind === 'replace') product = await this.#api.uploadImage(product.barcode, photo.image);
+      else if (photo.kind === 'import') product = await this.#api.importImage(product.barcode, photo.url);
     } catch (err) {
       this.#announce(product, createBarcode); // the product itself exists now
       throw new PhotoUploadError(product, err as Error);

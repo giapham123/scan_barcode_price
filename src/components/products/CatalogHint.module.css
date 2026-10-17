@@ -1,0 +1,13 @@
+.hint { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.found {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.found a { color: inherit; }

@@ -1,3 +1,4 @@
+import type { CatalogEntry } from '@/domain/CatalogEntry';
 import { Product } from '@/domain/Product';
 
 export class ApiError extends Error {
@@ -79,6 +80,29 @@ export class ProductApiClient {
 
   async removeImage(barcode: string): Promise<Product> {
     return Product.fromJSON(await this.#request<Record<string, unknown>>('DELETE', `${productPath(barcode)}/image`));
+  }
+
+  /** Use a photo from the online product database as the product's photo (downloaded by the server). */
+  async importImage(barcode: string, url: string): Promise<Product> {
+    const data = await this.#request<Record<string, unknown>>('POST', `${productPath(barcode)}/image/import`, {
+      body: JSON.stringify({ url }),
+      contentType: 'application/json',
+    });
+    return Product.fromJSON(data);
+  }
+
+  /**
+   * What the online product database knows about a barcode (name, photo – no price).
+   * @returns null when it does not know the product
+   * @throws {ApiError} e.g. 503 when the database cannot be reached
+   */
+  async lookupCatalog(barcode: string): Promise<CatalogEntry | null> {
+    try {
+      return await this.#request<CatalogEntry>('GET', `/catalog/${encodeURIComponent(barcode)}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
   }
 
   /** Ask the server for a new in-store barcode. */

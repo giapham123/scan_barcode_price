@@ -2,6 +2,10 @@ import 'server-only';
 import { resolve } from 'node:path';
 import { getStore } from '@netlify/blobs';
 import type { BarcodeAllocator } from './BarcodeAllocator';
+import { CatalogImageImporter } from './catalog/CatalogImageImporter';
+import { OPEN_FACTS_DATABASES, OPEN_FACTS_IMAGE_HOSTS, OpenFactsCatalog } from './catalog/OpenFactsCatalog';
+import { CachedCatalog, FallbackCatalog, type ProductCatalog } from './catalog/ProductCatalog';
+import { MAX_IMAGE_BYTES } from './http';
 import { FileProductStore } from './FileProductStore';
 import { InternalBarcodeAllocator } from './InternalBarcodeAllocator';
 import { NetlifyBlobsBarcodeAllocator, NetlifyBlobsProductStore } from './NetlifyBlobsProductStore';
@@ -15,11 +19,26 @@ import type { ProductStore } from './ProductStore';
  *              Decided at build time in next.config.ts; Netlify builds pick Blobs automatically.
  *   DATA_DIR   file storage only: folder with products.json and images/ (default ./data)
  *   ADMIN_PIN  when set, changing products requires this PIN
+ *   CATALOG_CONTACT  optional contact (email or URL) sent to Open Food Facts in the
+ *              User-Agent, as their API rules ask; defaults to the project's GitHub page
  */
 export interface ServerServices {
   store: ProductStore;
   allocator: BarcodeAllocator;
   adminPin: string | null;
+  /** Online product databases used to pre-fill new products. */
+  catalog: ProductCatalog;
+  catalogImages: CatalogImageImporter;
+}
+
+function createCatalog(): Pick<ServerServices, 'catalog' | 'catalogImages'> {
+  const contact = process.env.CATALOG_CONTACT || '+https://github.com/giapham123/scan_barcode_price';
+  const userAgent = `PriceScanner/1.0 (${contact})`;
+  const sources = [OPEN_FACTS_DATABASES.food, OPEN_FACTS_DATABASES.products];
+  return {
+    catalog: new CachedCatalog(new FallbackCatalog(sources.map((db) => new OpenFactsCatalog({ ...db, userAgent })))),
+    catalogImages: new CatalogImageImporter({ allowedHosts: OPEN_FACTS_IMAGE_HOSTS, maxBytes: MAX_IMAGE_BYTES, userAgent }),
+  };
 }
 
 function createServices(): ServerServices {
@@ -28,13 +47,14 @@ function createServices(): ServerServices {
   if (process.env.STORAGE === 'netlify-blobs') {
     const stores = openNetlifyBlobStores();
     const store = new NetlifyBlobsProductStore(stores);
-    return { store, allocator: new NetlifyBlobsBarcodeAllocator({ store: stores.sequence, products: store }), adminPin };
+    const allocator = new NetlifyBlobsBarcodeAllocator({ store: stores.sequence, products: store });
+    return { store, allocator, adminPin, ...createCatalog() };
   }
 
   // Runtime folder (live data), not part of the build – hence the turbopackIgnore hint.
   const dataDir = resolve(/*turbopackIgnore: true*/ process.cwd(), process.env.DATA_DIR || 'data');
   const store = new FileProductStore({ dataDir });
-  return { store, allocator: new InternalBarcodeAllocator({ dataDir, store }), adminPin };
+  return { store, allocator: new InternalBarcodeAllocator({ dataDir, store }), adminPin, ...createCatalog() };
 }
 
 /**

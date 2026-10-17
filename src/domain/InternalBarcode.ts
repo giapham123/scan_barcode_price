@@ -30,6 +30,18 @@ export function isInternalBarcode(code: string): boolean {
   return /^\d{13}$/.test(code) && code.startsWith(INTERNAL_PREFIX);
 }
 
+/**
+ * True for shop-internal codes of ANY shop (GS1 "restricted circulation"):
+ * EAN-13 starting with 20–29, UPC-A starting with 2 or 4 (in-store / variable weight).
+ * They mean different things in different shops, so they must never be
+ * looked up in a shared online product database.
+ */
+export function isRestrictedCirculation(code: string): boolean {
+  if (/^\d{13}$/.test(code)) return code[0] === '2';
+  if (/^\d{12}$/.test(code)) return code[0] === '2' || code[0] === '4';
+  return false;
+}
+
 /** The sequence number of an internal code, or null. */
 export function internalSequenceOf(code: string): number | null {
   return isInternalBarcode(code) ? Number(code.slice(INTERNAL_PREFIX.length, -1)) : null;

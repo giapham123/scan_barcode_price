@@ -11,13 +11,15 @@ interface ProductPhotoProps {
   /** "cover" crops to fill the box; "contain" shows the whole photo. */
   fit?: 'cover' | 'contain';
   placeholder?: string;
+  /** Load at once instead of when scrolled into view (e.g. inside a dialog). */
+  eager?: boolean;
 }
 
 /**
  * Photo of the real product, so staff can check it matches what they hold.
  * The box size comes from `className`; the photo fills it.
  */
-export function ProductPhoto({ src, alt, sizes, className = '', fit = 'cover', placeholder = 'No photo' }: ProductPhotoProps) {
+export function ProductPhoto({ src, alt, sizes, className = '', fit = 'cover', placeholder = 'No photo', eager = false }: ProductPhotoProps) {
   return (
     <span className={`${styles.box} ${className}`}>
       {src ? (
@@ -26,8 +28,10 @@ export function ProductPhoto({ src, alt, sizes, className = '', fit = 'cover', p
           alt={alt}
           fill
           sizes={sizes}
-          // Local previews (blob:) cannot go through the optimiser.
-          unoptimized={src.startsWith('blob:')}
+          loading={eager ? 'eager' : 'lazy'}
+          // Local previews (blob:) and online-database photos (https:) are shown as they are;
+          // only our own stored photos ("/images/…") go through the optimiser.
+          unoptimized={!src.startsWith('/')}
           style={{ objectFit: fit }}
         />
       ) : (
