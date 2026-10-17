@@ -1,10 +1,11 @@
 import 'server-only';
+import { randomUUID } from 'node:crypto';
 import type { Store } from '@netlify/blobs';
 import { Barcode } from '@/domain/Barcode';
 import { internalSequenceOf, makeInternalBarcode } from '@/domain/InternalBarcode';
 import { Product, type ProductData } from '@/domain/Product';
 import type { BarcodeAllocator } from './BarcodeAllocator';
-import { ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
+import { BarcodeAllocationError, ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
 import {
   buildProduct,
   IMAGE_TYPES,
@@ -126,29 +127,60 @@ export class NetlifyBlobsProductStore implements ProductStore {
  * is not enough. Each code is *claimed* with a create-only write
  * ("claim/<code>", onlyIfNew): if two phones race for the same number, only
  * one write succeeds and the other simply moves on to the next number.
+ *
+ * The number of tries is limited: if storage keeps refusing, a clear
+ * BarcodeAllocationError is raised (HTTP 503) instead of looping until the
+ * serverless function is killed (which Netlify reports as a bare 502).
  */
 export class NetlifyBlobsBarcodeAllocator implements BarcodeAllocator {
   readonly #store: BlobStore;
   readonly #products: ProductStore;
+  readonly #maxAttempts: number;
 
-  constructor({ store, products }: { store: BlobStore; products: ProductStore }) {
+  constructor({ store, products, maxAttempts = 20 }: { store: BlobStore; products: ProductStore; maxAttempts?: number }) {
     this.#store = store;
     this.#products = products;
+    this.#maxAttempts = maxAttempts;
   }
 
   async next(): Promise<string> {
+    const started = Date.now();
     const used = new Set((await this.#products.list()).map((p) => p.barcode));
     const highestUsed = Math.max(0, ...[...used].map(internalSequenceOf).filter((n): n is number => n !== null));
     const lastIssued = Number((await this.#store.get('last-sequence', { type: 'json' })) ?? 0);
 
-    for (let sequence = Math.max(lastIssued, highestUsed) + 1; ; sequence++) {
+    let sequence = Math.max(lastIssued, highestUsed);
+    for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
+      do sequence++;
+      while (used.has(makeInternalBarcode(sequence))); // skip codes products already use
       const code = makeInternalBarcode(sequence);
-      if (used.has(code)) continue;
-      const { modified } = await this.#store.setJSON(`claim/${code}`, { at: new Date().toISOString() }, { onlyIfNew: true });
-      if (!modified) continue; // someone else got this one first
-      // Only a starting hint for next time; uniqueness comes from the claim above.
-      await this.#store.setJSON('last-sequence', sequence);
-      return code;
+
+      if (await this.#claim(code)) {
+        // Only a starting hint for next time; uniqueness comes from the claim.
+        await this.#store.setJSON('last-sequence', sequence);
+        console.info(`[barcode] issued ${code} after ${attempt} attempt(s) in ${Date.now() - started} ms`);
+        return code;
+      }
     }
+
+    console.error(
+      `[barcode] no code claimed after ${this.#maxAttempts} attempts (last tried ${makeInternalBarcode(sequence)}, ` +
+        `last-sequence=${lastIssued}, highest used=${highestUsed}, ${Date.now() - started} ms)`,
+    );
+    throw new BarcodeAllocationError(`Could not reserve a new barcode (storage refused ${this.#maxAttempts} times). Please try again.`);
+  }
+
+  /**
+   * Claim a code with a create-only write. The claim carries a random token and is
+   * read back when the write reports "not modified", so a code is ours exactly
+   * when the stored claim has our token.
+   */
+  async #claim(code: string): Promise<boolean> {
+    const key = `claim/${code}`;
+    const token = randomUUID();
+    const { modified } = await this.#store.setJSON(key, { token, at: new Date().toISOString() }, { onlyIfNew: true });
+    if (modified) return true;
+    const stored = (await this.#store.get(key, { type: 'json' })) as { token?: string } | null;
+    return stored?.token === token;
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { ProductConflictError, ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
+import { BarcodeAllocationError, ProductConflictError, ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
+import type { BlobStore } from '@/lib/server/NetlifyBlobsProductStore';
 import { NetlifyBlobsBarcodeAllocator, NetlifyBlobsProductStore } from '@/lib/server/NetlifyBlobsProductStore';
 import { COLA, GUM, WATER } from './support/fixtures';
 import { memoryBlobStore } from './support/memoryBlobStore';
@@ -91,5 +92,39 @@ describe('NetlifyBlobsBarcodeAllocator', () => {
       Array.from({ length: 20 }, () => new NetlifyBlobsBarcodeAllocator({ store: shared, products: store }).next()),
     );
     expect(new Set(codes).size).toBe(20);
+  });
+
+  test('storage that keeps refusing ends with a clear error after a few tries, never an endless loop (Netlify 502)', async () => {
+    const { store } = setup();
+    const refusing = memoryBlobStore();
+    let claimAttempts = 0;
+    const original = refusing.setJSON.bind(refusing);
+    refusing.setJSON = (async (key: string, data: unknown, options?: { onlyIfNew?: boolean }) => {
+      if (key.startsWith('claim/')) {
+        claimAttempts++;
+        return { modified: false }; // e.g. a conditional write that always answers 412
+      }
+      return original(key, data, options);
+    }) as BlobStore['setJSON'];
+
+    const allocator = new NetlifyBlobsBarcodeAllocator({ store: refusing, products: store, maxAttempts: 5 });
+    const error = await allocator.next().catch((e) => e);
+    expect(error).toBeInstanceOf(BarcodeAllocationError);
+    expect(error.message).toMatch(/try again/);
+    expect(claimAttempts).toBe(5);
+  });
+
+  test('a claim that was stored but reported as "not modified" is still recognised as ours', async () => {
+    const { store } = setup();
+    const misreporting = memoryBlobStore();
+    const original = misreporting.setJSON.bind(misreporting);
+    misreporting.setJSON = (async (key: string, data: unknown, options?: { onlyIfNew?: boolean }) => {
+      const result = await original(key, data, options);
+      return key.startsWith('claim/') ? { modified: false } : result; // wrote it, but says it did not
+    }) as BlobStore['setJSON'];
+
+    const allocator = new NetlifyBlobsBarcodeAllocator({ store: misreporting, products: store });
+    expect(await allocator.next()).toBe('2000000000015');
+    expect(await allocator.next()).toBe('2000000000022');
   });
 });

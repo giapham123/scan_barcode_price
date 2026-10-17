@@ -31,3 +31,11 @@ export class ProductConflictError extends Error {
     this.name = 'ProductConflictError';
   }
 }
+
+/** No new in-store barcode could be reserved (storage kept refusing). */
+export class BarcodeAllocationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BarcodeAllocationError';
+  }
+}
