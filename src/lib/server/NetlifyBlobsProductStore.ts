@@ -1,11 +1,8 @@
 import 'server-only';
-import { randomUUID } from 'node:crypto';
 import type { Store } from '@netlify/blobs';
 import { Barcode } from '@/domain/Barcode';
-import { internalSequenceOf, makeInternalBarcode } from '@/domain/InternalBarcode';
 import { Product, type ProductData } from '@/domain/Product';
-import type { BarcodeAllocator } from './BarcodeAllocator';
-import { BarcodeAllocationError, ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
+import { ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
 import {
   buildProduct,
   IMAGE_TYPES,
@@ -29,6 +26,11 @@ const PRODUCT_PREFIX = 'product/';
  * - Photos live in a separate store; their content type is kept as metadata.
  * - Stores should be opened with strong consistency, so a change is visible
  *   on the very next request.
+ * - Only plain reads and writes are used: conditional writes (onlyIfNew)
+ *   timed out on Netlify in production.
+ * - A key is only read after a list call shows it exists: reading a MISSING
+ *   key is retried by the Blobs client for ~25 s, which made creating new
+ *   products time out (HTTP 502/504).
  */
 export class NetlifyBlobsProductStore implements ProductStore {
   readonly #products: BlobStore;
@@ -52,13 +54,22 @@ export class NetlifyBlobsProductStore implements ProductStore {
 
   async get(barcode: string): Promise<Product | null> {
     if (!Barcode.isValid(barcode)) return null;
-    const row = await this.#products.get(PRODUCT_PREFIX + barcode, { type: 'json' });
+    const key = PRODUCT_PREFIX + barcode;
+    if (!(await exists(this.#products, key))) return null;
+    const row = await this.#products.get(key, { type: 'json' });
     return row ? Product.fromJSON(row) : null;
+  }
+
+  /** All barcodes in use – one list call, without reading every product. */
+  async barcodes(): Promise<Set<string>> {
+    const { blobs } = await this.#products.list({ prefix: PRODUCT_PREFIX });
+    return new Set(blobs.map(({ key }) => key.slice(PRODUCT_PREFIX.length)));
   }
 
   async save(details: ProductDetails, { createOnly = false }: SaveOptions = {}): Promise<Product> {
     const barcode = parseBarcode(details.barcode);
-    const existing = createOnly ? null : await this.get(barcode);
+    const existing = await this.get(barcode);
+    if (createOnly && existing) throw new ProductConflictError(barcode);
     const product = buildProduct({
       barcode,
       name: details.name,
@@ -68,13 +79,9 @@ export class NetlifyBlobsProductStore implements ProductStore {
       imageUrl: existing?.imageUrl ?? null,
       updatedAt: this.#now().toISOString(),
     });
-    if (createOnly) {
-      // Atomic create-only write: of two requests for the same new barcode, only one succeeds.
-      const { modified } = await this.#products.setJSON(PRODUCT_PREFIX + barcode, product.toJSON(), { onlyIfNew: true });
-      if (!modified) throw new ProductConflictError(barcode);
-    } else {
-      await this.#write(product);
-    }
+    // Plain write: Netlify Blobs' conditional (create-only) writes timed out in production.
+    // createOnly is checked above; new barcodes are random, so a race is practically impossible.
+    await this.#write(product);
     return product;
   }
 
@@ -95,7 +102,7 @@ export class NetlifyBlobsProductStore implements ProductStore {
   }
 
   async readImage(fileName: string): Promise<{ data: Uint8Array; contentType: string } | null> {
-    if (!SAFE_IMAGE_NAME.test(fileName)) return null;
+    if (!SAFE_IMAGE_NAME.test(fileName) || !(await exists(this.#images, fileName))) return null;
     const entry = await this.#images.getWithMetadata(fileName, { type: 'arrayBuffer' });
     if (!entry) return null;
     return { data: new Uint8Array(entry.data), contentType: String(entry.metadata.contentType ?? 'image/jpeg') };
@@ -120,67 +127,8 @@ export class NetlifyBlobsProductStore implements ProductStore {
   }
 }
 
-/**
- * In-store barcode allocator on Netlify Blobs.
- *
- * Serverless functions run as many separate instances, so an in-memory queue
- * is not enough. Each code is *claimed* with a create-only write
- * ("claim/<code>", onlyIfNew): if two phones race for the same number, only
- * one write succeeds and the other simply moves on to the next number.
- *
- * The number of tries is limited: if storage keeps refusing, a clear
- * BarcodeAllocationError is raised (HTTP 503) instead of looping until the
- * serverless function is killed (which Netlify reports as a bare 502).
- */
-export class NetlifyBlobsBarcodeAllocator implements BarcodeAllocator {
-  readonly #store: BlobStore;
-  readonly #products: ProductStore;
-  readonly #maxAttempts: number;
-
-  constructor({ store, products, maxAttempts = 20 }: { store: BlobStore; products: ProductStore; maxAttempts?: number }) {
-    this.#store = store;
-    this.#products = products;
-    this.#maxAttempts = maxAttempts;
-  }
-
-  async next(): Promise<string> {
-    const started = Date.now();
-    const used = new Set((await this.#products.list()).map((p) => p.barcode));
-    const highestUsed = Math.max(0, ...[...used].map(internalSequenceOf).filter((n): n is number => n !== null));
-    const lastIssued = Number((await this.#store.get('last-sequence', { type: 'json' })) ?? 0);
-
-    let sequence = Math.max(lastIssued, highestUsed);
-    for (let attempt = 1; attempt <= this.#maxAttempts; attempt++) {
-      do sequence++;
-      while (used.has(makeInternalBarcode(sequence))); // skip codes products already use
-      const code = makeInternalBarcode(sequence);
-
-      if (await this.#claim(code)) {
-        // Only a starting hint for next time; uniqueness comes from the claim.
-        await this.#store.setJSON('last-sequence', sequence);
-        console.info(`[barcode] issued ${code} after ${attempt} attempt(s) in ${Date.now() - started} ms`);
-        return code;
-      }
-    }
-
-    console.error(
-      `[barcode] no code claimed after ${this.#maxAttempts} attempts (last tried ${makeInternalBarcode(sequence)}, ` +
-        `last-sequence=${lastIssued}, highest used=${highestUsed}, ${Date.now() - started} ms)`,
-    );
-    throw new BarcodeAllocationError(`Could not reserve a new barcode (storage refused ${this.#maxAttempts} times). Please try again.`);
-  }
-
-  /**
-   * Claim a code with a create-only write. The claim carries a random token and is
-   * read back when the write reports "not modified", so a code is ours exactly
-   * when the stored claim has our token.
-   */
-  async #claim(code: string): Promise<boolean> {
-    const key = `claim/${code}`;
-    const token = randomUUID();
-    const { modified } = await this.#store.setJSON(key, { token, at: new Date().toISOString() }, { onlyIfNew: true });
-    if (modified) return true;
-    const stored = (await this.#store.get(key, { type: 'json' })) as { token?: string } | null;
-    return stored?.token === token;
-  }
+/** Whether `key` exists, using a cheap list call (reading a missing key is slow, see above). */
+async function exists(store: BlobStore, key: string): Promise<boolean> {
+  const { blobs } = await store.list({ prefix: key });
+  return blobs.some((blob) => blob.key === key);
 }

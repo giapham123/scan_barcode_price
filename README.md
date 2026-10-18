@@ -71,6 +71,13 @@ On Netlify the camera works straight away, because the site is HTTPS.
 - Preview deploys share the live site's Blobs data, so **a price changed on a preview changes it for real**. Use previews to look, not to edit.
 - To deploy by hand (e.g. after changing a Netlify setting): **Actions → CI/CD → Run workflow**.
 
+### Troubleshooting on Netlify
+
+- **Your site address:** Netlify → your project → shown at the top of the overview (`https://<name>.netlify.app`).
+- **Diagnostics:** open `https://<name>.netlify.app/api/health?pin=<your ADMIN_PIN>`. It runs each storage operation once and shows whether it worked and how long it took. Send that output when reporting a problem.
+- **Function log:** Netlify → **Logs → Functions** shows server errors.
+- **How Netlify storage is used, and why:** a missing key is never read directly, because Netlify Blobs retries reads of missing keys for about 25 s, which caused 502/504 errors when creating products. "Not found" API answers are `200 null` instead of 404, because Netlify retries a 404 as a page. New in-store barcodes are **random** `20…` codes rather than sequential numbers, because a shared counter would need conditional writes, which timed out. Every storage call has a 5 s limit, so a hang shows as a readable message instead of a 504.
+
 **If saving fails with `MissingBlobsEnvironmentError`** (in the site's function logs), add `BLOBS_SITE_ID` and `BLOBS_TOKEN` as environment variables of the site too, then redeploy. The app then uses them to reach Blobs explicitly.
 
 ## Unknown products: auto-fill from Open Food Facts
@@ -163,12 +170,13 @@ Requests that change data need the `X-Admin-Pin` header when `ADMIN_PIN` is set.
 | Method | Path | |
 |---|---|---|
 | GET | `/api/products` | all products |
-| GET | `/api/products/:barcode` | one product, 404 if unknown |
-| PUT | `/api/products/:barcode` | create/update `{ name, price, currency, unit }` |
+| GET | `/api/products/:barcode` | one product, or `null` if unknown (not 404: Netlify retries 404s as pages) |
+| PUT | `/api/products/:barcode` | create/update `{ name, price, currency, unit }`; with `If-None-Match: *` create only (409 if it exists) |
 | PUT | `/api/products/:barcode/image` | upload photo (raw JPEG/PNG/WebP body, max 3 MB) |
 | DELETE | `/api/products/:barcode/image` | remove photo |
 | POST | `/api/barcodes/next` | new in-store barcode `{ barcode }` (201) |
-| GET | `/api/catalog/:barcode` | name/brand/photo from the online database (no PIN, no price); 404 unknown, 503 unavailable |
+| GET | `/api/catalog/:barcode` | name/brand/photo from the online database (no PIN, no price); `null` unknown, 503 unavailable |
+| GET | `/api/health?pin=<PIN>` | diagnostics: runs and times each storage operation |
 | POST | `/api/products/:barcode/image/import` | use an online-database photo `{ url }` (only its image hosts) |
 
 ## Common changes

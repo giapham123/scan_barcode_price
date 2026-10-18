@@ -8,7 +8,9 @@ import { CachedCatalog, FallbackCatalog, type ProductCatalog } from './catalog/P
 import { MAX_IMAGE_BYTES } from './http';
 import { FileProductStore } from './FileProductStore';
 import { InternalBarcodeAllocator } from './InternalBarcodeAllocator';
-import { NetlifyBlobsBarcodeAllocator, NetlifyBlobsProductStore } from './NetlifyBlobsProductStore';
+import { NetlifyBlobsProductStore } from './NetlifyBlobsProductStore';
+import { RandomBarcodeAllocator } from './RandomBarcodeAllocator';
+import { withTimeouts } from './withTimeouts';
 import type { ProductStore } from './ProductStore';
 
 /**
@@ -47,7 +49,7 @@ function createServices(): ServerServices {
   if (process.env.STORAGE === 'netlify-blobs') {
     const stores = openNetlifyBlobStores();
     const store = new NetlifyBlobsProductStore(stores);
-    const allocator = new NetlifyBlobsBarcodeAllocator({ store: stores.sequence, products: store });
+    const allocator = new RandomBarcodeAllocator({ usedBarcodes: () => store.barcodes() });
     return { store, allocator, adminPin, ...createCatalog() };
   }
 
@@ -58,7 +60,7 @@ function createServices(): ServerServices {
 }
 
 /**
- * The three Netlify Blobs stores the app uses, with strong consistency so a
+ * The two Netlify Blobs stores the app uses, with strong consistency so a
  * saved price is visible on the very next request.
  *
  * On Netlify the credentials are normally provided automatically. If you see
@@ -70,8 +72,9 @@ export function openNetlifyBlobStores() {
   const siteID = process.env.BLOBS_SITE_ID;
   const token = process.env.BLOBS_TOKEN;
   const credentials = siteID && token ? { siteID, token } : {};
-  const open = (name: string) => getStore({ name, consistency: 'strong', ...credentials });
-  return { products: open('products'), images: open('product-images'), sequence: open('barcode-sequence') };
+  // Each call is limited to 5 s, so a hanging request becomes a readable 503, not a bare 504.
+  const open = (name: string) => withTimeouts(getStore({ name, consistency: 'strong', ...credentials }), 5000, `blobs:${name}`);
+  return { products: open('products'), images: open('product-images') };
 }
 
 // Next.js may bundle each route separately and reloads modules in dev.

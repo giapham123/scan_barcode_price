@@ -1,7 +1,6 @@
 /**
  * Copies the local catalogue (DATA_DIR, default ./data) into the Netlify Blobs
- * stores used by the deployed site: products, their photos and the in-store
- * barcode counter.
+ * stores used by the deployed site: products and their photos.
  *
  *   BLOBS_SITE_ID=<site id> BLOBS_TOKEN=<personal access token> npm run upload-data
  *
@@ -49,15 +48,6 @@ async function main() {
     }
     uploaded++;
     console.log(`  ✓ ${product.name}`);
-  }
-
-  // Carry the in-store barcode counter over, so new codes continue the local sequence.
-  try {
-    const { last } = JSON.parse(await readFile(join(dataDir, 'barcode-sequence.json'), 'utf8'));
-    const online = Number((await stores.sequence.get('last-sequence', { type: 'json' })) ?? 0);
-    if (last > online) await stores.sequence.setJSON('last-sequence', last);
-  } catch {
-    // No local counter yet: nothing to carry over.
   }
 
   console.log(`Done: ${uploaded} uploaded, ${skipped} already online${skipped ? ' (use --overwrite to replace)' : ''}.`);

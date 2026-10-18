@@ -39,3 +39,11 @@ export class BarcodeAllocationError extends Error {
     this.name = 'BarcodeAllocationError';
   }
 }
+
+/** The storage service did not answer in time. */
+export class StorageTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StorageTimeoutError';
+  }
+}

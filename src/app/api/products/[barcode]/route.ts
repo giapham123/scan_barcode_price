@@ -1,13 +1,14 @@
 import { getServices } from '@/lib/server/container';
-import { HttpError } from '@/lib/server/errors';
 import { handle, json, readJson, requirePin } from '@/lib/server/http';
 
-/** GET /api/products/:barcode — one product, 404 if unknown. */
+/**
+ * GET /api/products/:barcode — one product, or `null` if the barcode is not in the list.
+ * "Not found" is a normal answer here, so it is 200 with `null` rather than 404:
+ * Netlify treats a 404 as a missing page and retries the URL with ".html" (slow, wrong).
+ */
 export const GET = handle(async (_request: Request, ctx: RouteContext<'/api/products/[barcode]'>) => {
   const { barcode } = await ctx.params;
-  const product = await getServices().store.get(barcode);
-  if (!product) throw new HttpError(404, `Product ${barcode} not found`);
-  return json(product);
+  return json(await getServices().store.get(barcode));
 });
 
 /**

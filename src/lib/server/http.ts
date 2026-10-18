@@ -1,7 +1,14 @@
 import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
 import { unstable_rethrow } from 'next/navigation';
-import { BarcodeAllocationError, HttpError, ProductConflictError, ProductNotFoundError, ProductValidationError } from './errors';
+import {
+  BarcodeAllocationError,
+  HttpError,
+  ProductConflictError,
+  ProductNotFoundError,
+  ProductValidationError,
+  StorageTimeoutError,
+} from './errors';
 
 export const MAX_JSON_BYTES = 64 * 1024;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -18,7 +25,8 @@ export function handle<Args extends unknown[]>(fn: (...args: Args) => Promise<Re
       unstable_rethrow(err); // let Next.js's own control-flow errors (e.g. from connection()) through
       const httpError = toHttpError(err);
       if (httpError.status >= 500) console.error(err);
-      return json({ error: httpError.status >= 500 ? 'Internal server error' : httpError.message }, httpError.status);
+      // Unexpected errors (500) are hidden; deliberate ones (e.g. 503 "try again") keep their message.
+      return json({ error: httpError.status === 500 ? 'Internal server error' : httpError.message }, httpError.status);
     }
   };
 }
@@ -29,8 +37,13 @@ export function json(data: unknown, status = 200): Response {
 
 /** Writes need the `X-Admin-Pin` header when an admin PIN is configured. */
 export function requirePin(request: Request, adminPin: string | null): void {
+  requirePinValue(request.headers.get('x-admin-pin'), adminPin);
+}
+
+/** Same check for a PIN given another way (e.g. `?pin=` on a page opened in the browser). */
+export function requirePinValue(pin: string | null, adminPin: string | null): void {
   if (!adminPin) return;
-  const given = Buffer.from(request.headers.get('x-admin-pin') ?? '');
+  const given = Buffer.from(pin ?? '');
   const expected = Buffer.from(adminPin);
   const ok = given.length === expected.length && timingSafeEqual(given, expected);
   if (!ok) throw new HttpError(401, 'Wrong or missing admin PIN');
@@ -69,5 +82,6 @@ function toHttpError(err: unknown): HttpError {
   if (err instanceof ProductValidationError) return new HttpError(400, err.message);
   if (err instanceof ProductConflictError) return new HttpError(409, err.message);
   if (err instanceof BarcodeAllocationError) return new HttpError(503, err.message);
+  if (err instanceof StorageTimeoutError) return new HttpError(503, 'Storage did not answer in time. Please try again.');
   return new HttpError(500, 'Internal server error');
 }

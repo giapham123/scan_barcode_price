@@ -25,6 +25,16 @@ export function makeInternalBarcode(sequence: number): string {
   return data + computeGs1CheckDigit(data);
 }
 
+/**
+ * A random in-store code (same format: 20 + 10 digits + check digit).
+ * Used where a shared counter is not reliable (serverless hosting): with
+ * 10 billion possible codes, two phones picking the same one is practically impossible.
+ * @param random returns a number in [0, 1), injectable for tests
+ */
+export function randomInternalBarcode(random: () => number = Math.random): string {
+  return makeInternalBarcode(1 + Math.floor(random() * MAX_SEQUENCE));
+}
+
 /** True for codes made by makeInternalBarcode. */
 export function isInternalBarcode(code: string): boolean {
   return /^\d{13}$/.test(code) && code.startsWith(INTERNAL_PREFIX);

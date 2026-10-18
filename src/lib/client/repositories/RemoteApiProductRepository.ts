@@ -4,7 +4,7 @@ import type { ProductRepository } from './ProductRepository';
 
 /**
  * Looks up a product on the REST API.
- *   GET {baseUrl}/products/{barcode}  -> 200 product JSON, 404 when unknown
+ *   GET {baseUrl}/products/{barcode}  -> 200 product JSON, or 200 null (or 404) when unknown
  *
  * Adapt `#toProduct` if you point it at an API with a different shape (Adapter).
  */
@@ -21,7 +21,8 @@ export class RemoteApiProductRepository implements ProductRepository {
     const res = await this.#fetch(`${this.#baseUrl}/products/${encodeURIComponent(barcode.value)}`);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Price API error: HTTP ${res.status}`);
-    return this.#toProduct(await res.json());
+    const data = await res.json();
+    return data ? this.#toProduct(data) : null;
   }
 
   #toProduct(data: Record<string, unknown>): Product {

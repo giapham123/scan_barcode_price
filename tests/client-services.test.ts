@@ -57,7 +57,9 @@ describe('PriceLookupService', () => {
 });
 
 describe('repositories', () => {
-  test('RemoteApi maps 200 / 404 / errors', async () => {
+  test('RemoteApi maps 200 / 200 null / 404 / errors', async () => {
+    const empty = new RemoteApiProductRepository({ baseUrl: '/api', fetchFn: fakeFetch(() => Response.json(null)).fetch });
+    expect(await empty.findByBarcode(Barcode.parse('96385074'))).toBeNull();
     const { fetch, calls } = fakeFetch((url) =>
       url.endsWith('5449000000996') ? Response.json(COLA) : url.endsWith('96385074') ? new Response(null, { status: 404 }) : new Response(null, { status: 500 }),
     );
@@ -127,9 +129,9 @@ describe('ProductApiClient', () => {
     expect(pinStore.asked).toHaveLength(1); // remembered
   });
 
-  test('lookupCatalog: 404 means "not known", other errors are thrown', async () => {
+  test('lookupCatalog: null means "not known", other errors are thrown', async () => {
     const { fetch, calls } = fakeFetch((url) =>
-      url.endsWith('/96385074') ? Response.json({ barcode: '96385074', name: 'Gum' }) : url.endsWith('/5449000000996') ? Response.json({}, { status: 404 }) : Response.json({}, { status: 503 }),
+      url.endsWith('/96385074') ? Response.json({ barcode: '96385074', name: 'Gum' }) : url.endsWith('/5449000000996') ? Response.json(null) : Response.json({}, { status: 503 }),
     );
     const api = new ProductApiClient({ baseUrl: '/api', fetchFn: fetch });
     expect((await api.lookupCatalog('96385074'))?.name).toBe('Gum');

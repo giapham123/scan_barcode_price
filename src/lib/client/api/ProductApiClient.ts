@@ -98,7 +98,7 @@ export class ProductApiClient {
    */
   async lookupCatalog(barcode: string): Promise<CatalogEntry | null> {
     try {
-      return await this.#request<CatalogEntry>('GET', `/catalog/${encodeURIComponent(barcode)}`);
+      return await this.#request<CatalogEntry | null>('GET', `/catalog/${encodeURIComponent(barcode)}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
       throw err;

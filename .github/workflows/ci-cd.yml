@@ -43,7 +43,19 @@ jobs:
         run: npm install -g npm@11
 
       - name: Install
-        run: npm ci
+        # On failure, the npm error is also published as an annotation, which is
+        # visible on the public run page (the full log needs a GitHub login).
+        run: |
+          if ! npm ci --no-audit --no-fund > npm-ci.log 2>&1; then
+            cat npm-ci.log
+            message=$(grep -E 'npm (error|ERR!)' npm-ci.log | tail -n 30 || true)
+            [ -n "$message" ] || message=$(tail -n 30 npm-ci.log)
+            # Annotation format: drop CR, escape %, encode line breaks as %0A.
+            message=$(printf '%s' "$message" | tr -d '\r' | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}')
+            echo "::error title=npm ci failed::$message"
+            exit 1
+          fi
+          cat npm-ci.log
 
       - name: Lint
         run: npm run lint
@@ -100,7 +112,7 @@ jobs:
 
       - name: Install
         if: steps.secrets.outputs.ready == 'true'
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Build and deploy
         id: deploy

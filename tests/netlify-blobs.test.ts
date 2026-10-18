@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'vitest';
-import { BarcodeAllocationError, ProductConflictError, ProductNotFoundError, ProductValidationError } from '@/lib/server/errors';
-import type { BlobStore } from '@/lib/server/NetlifyBlobsProductStore';
-import { NetlifyBlobsBarcodeAllocator, NetlifyBlobsProductStore } from '@/lib/server/NetlifyBlobsProductStore';
+import { Barcode } from '@/domain/Barcode';
+import { isInternalBarcode } from '@/domain/InternalBarcode';
+import {
+  BarcodeAllocationError,
+  ProductConflictError,
+  ProductNotFoundError,
+  ProductValidationError,
+  StorageTimeoutError,
+} from '@/lib/server/errors';
+import { NetlifyBlobsProductStore } from '@/lib/server/NetlifyBlobsProductStore';
+import { RandomBarcodeAllocator } from '@/lib/server/RandomBarcodeAllocator';
+import { withTimeouts } from '@/lib/server/withTimeouts';
 import { COLA, GUM, WATER } from './support/fixtures';
 import { memoryBlobStore } from './support/memoryBlobStore';
 
@@ -58,15 +67,45 @@ describe('NetlifyBlobsProductStore', () => {
     await expect(store.setImage(COLA.barcode, JPEG, 'image/gif')).rejects.toBeInstanceOf(ProductValidationError);
   });
 
-  test('createOnly never overwrites: of two racing creates for one barcode, exactly one wins', async () => {
+  test('createOnly refuses an existing barcode and never uses conditional writes', async () => {
+    const { store, products } = setup();
+    const writeOptions: unknown[] = [];
+    const original = products.setJSON.bind(products);
+    products.setJSON = ((key: string, data: unknown, options?: object) => {
+      writeOptions.push(options);
+      return original(key, data, options as never);
+    }) as typeof products.setJSON;
+
+    await store.save({ ...COLA });
+    await expect(store.save({ ...COLA, price: 9 }, { createOnly: true })).rejects.toBeInstanceOf(ProductConflictError);
+    expect((await store.get(COLA.barcode))?.price).toBe(1.25);
+    await store.save({ ...GUM }, { createOnly: true });
+    expect(writeOptions).toEqual([undefined, undefined]); // no onlyIfNew / onlyIfMatch
+  });
+
+  test('a missing product or photo is never read directly (that read hangs on Netlify Blobs)', async () => {
+    const { store, products, images } = setup();
+    const reads: string[] = [];
+    for (const blobs of [products, images]) {
+      const get = blobs.get.bind(blobs);
+      const getWithMetadata = blobs.getWithMetadata.bind(blobs);
+      blobs.get = ((key: string, options: never) => (reads.push(key), get(key, options))) as typeof blobs.get;
+      blobs.getWithMetadata = ((key: string, options: never) => (reads.push(key), getWithMetadata(key, options))) as typeof blobs.getWithMetadata;
+    }
+
+    expect(await store.get(COLA.barcode)).toBeNull();
+    expect(await store.readImage('5449000000996-1.jpg')).toBeNull();
+    await store.save({ ...COLA }, { createOnly: true });
+    expect(reads).toEqual([]); // only list calls so far
+    expect((await store.get(COLA.barcode))?.name).toBe('Cola 330ml');
+    expect(reads).toEqual(['product/5449000000996']);
+  });
+
+  test('barcodes() lists codes in use with a single list call', async () => {
     const { store } = setup();
-    const results = await Promise.allSettled([
-      store.save({ ...GUM, barcode: '2000000000015', name: 'Cake' }, { createOnly: true }),
-      store.save({ ...GUM, barcode: '2000000000015', name: 'Bread' }, { createOnly: true }),
-    ]);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(rejected.reason).toBeInstanceOf(ProductConflictError);
+    await store.save({ ...COLA });
+    await store.save({ ...GUM });
+    expect(await store.barcodes()).toEqual(new Set([COLA.barcode, GUM.barcode]));
   });
 
   test('concurrent saves of different products are all kept (one blob per product)', async () => {
@@ -76,55 +115,34 @@ describe('NetlifyBlobsProductStore', () => {
   });
 });
 
-describe('NetlifyBlobsBarcodeAllocator', () => {
-  test('sequential, and skips codes already used by products', async () => {
-    const { store } = setup();
-    await store.save({ ...GUM, barcode: '2000000000015' });
-    const allocator = new NetlifyBlobsBarcodeAllocator({ store: memoryBlobStore(), products: store });
-    expect([await allocator.next(), await allocator.next()]).toEqual(['2000000000022', '2000000000039']);
+describe('RandomBarcodeAllocator', () => {
+  test('issues valid in-store EAN-13 codes, skipping codes already in use', async () => {
+    const values = [0, 0, 0.5]; // first two draws give the same, used code
+    const used = new Set(['2000000000015']);
+    const allocator = new RandomBarcodeAllocator({ usedBarcodes: async () => used, random: () => values.shift()! });
+    const code = await allocator.next();
+    expect(code).not.toBe('2000000000015');
+    expect(isInternalBarcode(code)).toBe(true);
+    expect(Barcode.parse(code).format).toBe('EAN-13');
   });
 
-  test('separate instances racing (like several Netlify functions) never get the same code', async () => {
-    const { store } = setup();
-    const shared = memoryBlobStore();
-    // A new allocator per request, as each serverless instance would have.
-    const codes = await Promise.all(
-      Array.from({ length: 20 }, () => new NetlifyBlobsBarcodeAllocator({ store: shared, products: store }).next()),
-    );
-    expect(new Set(codes).size).toBe(20);
+  test('gives up with a clear error instead of looping when no free code is drawn', async () => {
+    const allocator = new RandomBarcodeAllocator({ usedBarcodes: async () => new Set(['2000000000015']), random: () => 0, maxAttempts: 3 });
+    await expect(allocator.next()).rejects.toBeInstanceOf(BarcodeAllocationError);
   });
 
-  test('storage that keeps refusing ends with a clear error after a few tries, never an endless loop (Netlify 502)', async () => {
-    const { store } = setup();
-    const refusing = memoryBlobStore();
-    let claimAttempts = 0;
-    const original = refusing.setJSON.bind(refusing);
-    refusing.setJSON = (async (key: string, data: unknown, options?: { onlyIfNew?: boolean }) => {
-      if (key.startsWith('claim/')) {
-        claimAttempts++;
-        return { modified: false }; // e.g. a conditional write that always answers 412
-      }
-      return original(key, data, options);
-    }) as BlobStore['setJSON'];
-
-    const allocator = new NetlifyBlobsBarcodeAllocator({ store: refusing, products: store, maxAttempts: 5 });
-    const error = await allocator.next().catch((e) => e);
-    expect(error).toBeInstanceOf(BarcodeAllocationError);
-    expect(error.message).toMatch(/try again/);
-    expect(claimAttempts).toBe(5);
+  test('1000 codes drawn by "different phones" are all different', async () => {
+    const codes = await Promise.all(Array.from({ length: 1000 }, () => new RandomBarcodeAllocator({ usedBarcodes: async () => new Set() }).next()));
+    expect(new Set(codes).size).toBe(1000);
   });
+});
 
-  test('a claim that was stored but reported as "not modified" is still recognised as ours', async () => {
-    const { store } = setup();
-    const misreporting = memoryBlobStore();
-    const original = misreporting.setJSON.bind(misreporting);
-    misreporting.setJSON = (async (key: string, data: unknown, options?: { onlyIfNew?: boolean }) => {
-      const result = await original(key, data, options);
-      return key.startsWith('claim/') ? { modified: false } : result; // wrote it, but says it did not
-    }) as BlobStore['setJSON'];
-
-    const allocator = new NetlifyBlobsBarcodeAllocator({ store: misreporting, products: store });
-    expect(await allocator.next()).toBe('2000000000015');
-    expect(await allocator.next()).toBe('2000000000022');
+describe('withTimeouts', () => {
+  test('a hanging storage call fails with StorageTimeoutError; fast calls pass through', async () => {
+    const slow = withTimeouts({ hang: () => new Promise(() => {}), fast: async () => 42, sync: () => 'x' }, 30, 'blobs:test');
+    await expect(slow.hang()).rejects.toBeInstanceOf(StorageTimeoutError);
+    await expect(slow.hang()).rejects.toThrow(/blobs:test.hang did not answer within 30 ms/);
+    expect(await slow.fast()).toBe(42);
+    expect(slow.sync()).toBe('x');
   });
 });

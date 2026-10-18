@@ -1,9 +1,13 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+// connection() only works inside a real Next.js request; route handlers are called directly here.
+vi.mock('next/server', async (importOriginal) => ({ ...(await importOriginal<object>()), connection: async () => {} }));
 import * as barcodesNext from '@/app/api/barcodes/next/route';
 import * as catalogRoute from '@/app/api/catalog/[barcode]/route';
+import * as health from '@/app/api/health/route';
 import * as imageImport from '@/app/api/products/[barcode]/image/import/route';
 import * as productImage from '@/app/api/products/[barcode]/image/route';
 import * as productOne from '@/app/api/products/[barcode]/route';
@@ -148,11 +152,13 @@ describe('API route handlers', () => {
   });
   const catalogCalls: string[] = [];
 
-  test('get one product; 404 for an unknown one', async () => {
+  test('get one product; an unknown one is 200 null (not 404, which Netlify retries as a page)', async () => {
     const ok = await productOne.GET(req('GET'), params({ barcode: COLA.barcode }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).name).toBe('Cola 330ml');
-    expect((await productOne.GET(req('GET'), params({ barcode: GUM.barcode }))).status).toBe(404);
+    const unknown = await productOne.GET(req('GET'), params({ barcode: GUM.barcode }));
+    expect(unknown.status).toBe(200);
+    expect(await unknown.json()).toBeNull();
   });
 
   test('changes need the admin PIN', async () => {
@@ -208,17 +214,19 @@ describe('API route handlers', () => {
     expect((await put(GUM.barcode)).status).toBe(200);
   });
 
-  test('GET /api/catalog/:barcode: found 200, unknown 404, unavailable 503, invalid 400', async () => {
+  test('GET /api/catalog/:barcode: found 200, unknown 200 null, unavailable 503, invalid 400', async () => {
     const found = await catalogRoute.GET(req('GET'), params({ barcode: '96385074' }));
     expect(found.status).toBe(200);
     expect((await found.json()).name).toBe('Wrigley Gum');
-    expect((await catalogRoute.GET(req('GET'), params({ barcode: '5449000000996' }))).status).toBe(404);
+    const unknown = await catalogRoute.GET(req('GET'), params({ barcode: '5449000000996' }));
+    expect(unknown.status).toBe(200);
+    expect(await unknown.json()).toBeNull();
     expect((await catalogRoute.GET(req('GET'), params({ barcode: '036000291452' }))).status).toBe(503);
     expect((await catalogRoute.GET(req('GET'), params({ barcode: '123' }))).status).toBe(400);
   });
 
   test('GET /api/catalog never sends in-store (20…) codes to the online database', async () => {
-    expect((await catalogRoute.GET(req('GET'), params({ barcode: '2000000000015' }))).status).toBe(404);
+    expect(await (await catalogRoute.GET(req('GET'), params({ barcode: '2000000000015' }))).json()).toBeNull();
     expect(catalogCalls).not.toContain('2000000000015');
   });
 
@@ -235,6 +243,16 @@ describe('API route handlers', () => {
     const { imageUrl } = await ok.json();
     const served = await images.GET(req('GET'), params({ file: imageUrl.split('/').pop() }));
     expect(new Uint8Array(await served.arrayBuffer())).toEqual(JPEG);
+  });
+
+  test('GET /api/health needs ?pin= and reports each storage step', async () => {
+    expect((await health.GET(new Request('http://localhost/api/health'))).status).toBe(401);
+    expect((await health.GET(new Request('http://localhost/api/health?pin=0000'))).status).toBe(401);
+    const res = await health.GET(new Request(`http://localhost/api/health?pin=${PIN}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.storage).toBe('file');
+    expect(body.steps[0]).toMatchObject({ step: 'list products', ok: true, result: '2 products' });
   });
 
   test('POST /api/barcodes/next returns a new in-store code', async () => {
