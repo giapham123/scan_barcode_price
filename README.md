@@ -181,7 +181,7 @@ Requests that change data need the `X-Admin-Pin` header when `ADMIN_PIN` is set.
 
 ## Common changes
 
-- **Currency or locale:** set `locale` and `currency` in `src/lib/config.ts`. Each product keeps its own currency.
+- **Currency or locale:** set `locale` and `currency` in `src/lib/config.ts` (default: `vi-VN`, `VND`). Each product keeps its own currency. Typed prices are read per currency: for VND, `15.000` / `15,000` mean 15000.
 - **Use a database:** write a class that implements `ProductStore` (`src/lib/server/ProductStore.ts`) and a `BarcodeAllocator`, and return them from `createServices()` in `src/lib/server/container.ts`. `NetlifyBlobsProductStore.ts` is a worked example. Nothing else changes.
 - **Support another barcode format:** add an entry to `BARCODE_FORMATS` in `src/domain/Barcode.ts`, then add the name to `WANTED_FORMATS` in `NativeCameraScanner.ts` and to the hints in `ZxingCameraScanner.ts`.
 - **React to scans elsewhere** (a beep, a receipt…): in a client component, call `useAppEvent('lookup:completed', handler)`.

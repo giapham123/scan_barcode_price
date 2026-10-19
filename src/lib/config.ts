@@ -20,10 +20,10 @@ export const config = Object.freeze({
   scanCooldownMs: 2000,
 
   /** Locale used to format prices, e.g. 'en-US', 'vi-VN'. */
-  locale: 'en-US',
+  locale: 'vi-VN',
 
   /** Default currency for new products and the empty cart total. */
-  currency: 'USD',
+  currency: 'VND',
 
   /** Number of recent scans kept in the history list. */
   historySize: 10,

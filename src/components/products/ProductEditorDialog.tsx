@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Barcode, InvalidBarcodeError } from '@/domain/Barcode';
+import { examplePrice, parsePrice } from '@/domain/Money';
 import type { Product } from '@/domain/Product';
 import { useServices } from '@/components/providers/ServicesProvider';
 import { AuthCancelledError } from '@/lib/client/api/ProductApiClient';
@@ -98,12 +99,12 @@ export function ProductEditorDialog({ request, onClose }: Props) {
 
     if (!name.trim()) return 'Please enter the product name.';
 
-    const priceText = price.trim().replace(',', '.'); // phones in many countries type a comma
-    const value = Number(priceText);
-    if (priceText === '' || !Number.isFinite(value) || value < 0) return 'Please enter a valid price, e.g. 1.25';
-
     const code3 = currency.trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(code3)) return 'Currency must be a 3-letter code, e.g. USD or VND.';
+    if (!/^[A-Z]{3}$/.test(code3)) return 'Currency must be a 3-letter code, e.g. VND or USD.';
+
+    // "15.000" means fifteen thousand in VND, but 15 in some other currencies: read it per currency.
+    const value = parsePrice(price, code3);
+    if (value === null) return `Please enter a valid price, e.g. ${examplePrice(code3)}`;
 
     return { barcode: code, name: name.trim(), price: value, currency: code3, unit: unit.trim() };
   }
@@ -210,6 +211,7 @@ export function ProductEditorDialog({ request, onClose }: Props) {
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               inputMode="decimal"
+              placeholder={examplePrice(currency.trim().toUpperCase() || config.currency)}
               autoComplete="off"
               data-autofocus={Boolean(existing) || undefined}
             />

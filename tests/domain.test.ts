@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { Barcode, computeGs1CheckDigit, InvalidBarcodeError, type BarcodeFormat } from '@/domain/Barcode';
 import { cartReducer, EMPTY_CART, summarizeCart, type CartAction, type CartState } from '@/domain/Cart';
 import { internalSequenceOf, isInternalBarcode, makeInternalBarcode, MAX_SEQUENCE } from '@/domain/InternalBarcode';
-import { fromMinor, toMinor } from '@/domain/Money';
+import { examplePrice, fromMinor, parsePrice, toMinor } from '@/domain/Money';
 import { Product } from '@/domain/Product';
 import { COLA, GUM, product, RICE_VND, WATER } from './support/fixtures';
 
@@ -74,6 +74,31 @@ describe('Money', () => {
     expect(toMinor(15000, 'VND')).toBe(15000);
     expect(toMinor(1.234, 'KWD')).toBe(1234);
     expect(fromMinor(125, 'USD')).toBe(1.25);
+  });
+});
+
+describe('parsePrice (what people type)', () => {
+  test('VND has no decimals: dots, commas and spaces are thousands separators', () => {
+    for (const typed of ['15000', '15.000', '15,000', '15 000', ' 15.000 ']) expect(parsePrice(typed, 'VND')).toBe(15000);
+    expect(parsePrice('1.250.000', 'VND')).toBe(1250000);
+    expect(parsePrice('0', 'VND')).toBe(0);
+  });
+
+  test('USD: the last separator is the decimal point', () => {
+    expect(parsePrice('1.25', 'USD')).toBe(1.25);
+    expect(parsePrice('1,25', 'USD')).toBe(1.25);
+    expect(parsePrice('1,234.50', 'USD')).toBe(1234.5);
+    expect(parsePrice('1.234,50', 'USD')).toBe(1234.5);
+    expect(parsePrice('3', 'USD')).toBe(3);
+  });
+
+  test('rejects anything that is not a price', () => {
+    for (const typed of ['', 'abc', '-5', '12a', '.5', '1e5']) expect(parsePrice(typed, 'VND')).toBeNull();
+  });
+
+  test('example hint fits the currency', () => {
+    expect(examplePrice('VND')).toBe('15000');
+    expect(examplePrice('USD')).toBe('1.25');
   });
 });
 
