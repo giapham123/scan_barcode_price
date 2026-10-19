@@ -73,8 +73,9 @@
 .round,
 .cartRemove {
   font: inherit;
-  width: 32px;
-  height: 32px;
+  width: 44px; /* thumb-sized */
+  height: 44px;
+  font-size: 1.2rem;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -151,3 +152,35 @@
 }
 .mono { font-family: var(--mono); }
 .notPriced { margin: 6px 0 0; text-align: right; color: var(--warn); font-size: 0.9rem; }
+
+/* ---- Phones: total bar fixed at the bottom while scanning ---- */
+.cartBar { display: none; }
+@media (max-width: 760px) {
+  .scannerPage { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .cartBar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    min-height: 64px;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+  }
+  .cartBarCount { font-weight: 600; }
+  .cartBarPending { color: var(--warn); font-weight: 400; font-size: 0.85rem; }
+  .cartBarTotal { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+  /* Bigger camera preview on phones: easier to aim. */
+  .viewport { aspect-ratio: 1 / 1; }
+  .cameraButton { width: 100%; }
+}

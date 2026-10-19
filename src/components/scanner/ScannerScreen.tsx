@@ -8,6 +8,7 @@ import { useProductEditor } from '@/components/products/ProductEditorProvider';
 import type { EditRequest } from '@/components/products/ProductEditorDialog';
 import { config } from '@/lib/config';
 import { CameraPanel } from './CameraPanel';
+import { CartBar } from './CartBar';
 import { CartPanel } from './CartPanel';
 import { ResultCard, type ResultState } from './ResultCard';
 import { ScanHistory, type HistoryEntry } from './ScanHistory';
@@ -99,7 +100,7 @@ export function ScannerScreen() {
   }
 
   return (
-    <main className="layout">
+    <main className={`layout ${styles.scannerPage}`}>
       <CameraPanel onCode={lookup} />
 
       <section className="card">
@@ -147,6 +148,8 @@ export function ScannerScreen() {
       />
 
       <ScanHistory entries={history} />
+
+      <CartBar summary={summary} notPricedCount={totalUnknown(unknown)} cartId="cart" />
     </main>
   );
 }

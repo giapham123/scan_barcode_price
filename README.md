@@ -90,6 +90,12 @@ When you scan a real product that isn't in your list and tap **Add product**, th
 - **Attribution:** the data is © Open Food Facts contributors under the [Open Database License](https://opendatacommons.org/licenses/odbl/1-0/), and photos are under [CC BY-SA](https://creativecommons.org/licenses/by-sa/3.0/). The form links to the product's page as the source.
 - To use another database, implement `ProductCatalog` (`src/lib/server/catalog/ProductCatalog.ts`) and add it in `createCatalog()` in `container.ts`.
 
+## On your phone
+
+- **Install it like an app:** open the site in **Safari (iPhone)** → Share → **Add to Home Screen**, or in **Chrome (Android)** → ⋮ → **Install app / Add to Home screen**. It then opens full-screen with its own icon (`public/icons`; change `icon.svg` and run `npm run icons`).
+- **While scanning,** the cart total stays visible in a bar at the bottom; tap it to jump to the cart. The screen stays on while the camera is running.
+- **The product form** opens full-screen with Save / Cancel always at the bottom; the price field shows the number pad.
+
 ## Pages
 
 | URL | What it does |

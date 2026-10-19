@@ -1,6 +1,7 @@
 'use client';
 
 import { useCameraScanner, type CameraState } from './useCameraScanner';
+import { useWakeLock } from './useWakeLock';
 import styles from './Scanner.module.css';
 
 const LABELS: Record<CameraState['status'], string> = {
@@ -28,6 +29,7 @@ function statusText(state: CameraState): string {
 
 export function CameraPanel({ onCode }: { onCode: (code: string) => void }) {
   const { videoRef, state, toggle } = useCameraScanner(onCode);
+  useWakeLock(state.status === 'on'); // the screen stays on while scanning
 
   return (
     <section className="card" aria-label="Camera scanner">
@@ -38,7 +40,7 @@ export function CameraPanel({ onCode }: { onCode: (code: string) => void }) {
       </div>
       <button
         type="button"
-        className="button"
+        className={`button ${styles.cameraButton}`}
         onClick={() => void toggle()}
         disabled={state.status === 'starting' || state.status === 'unsupported'}
       >

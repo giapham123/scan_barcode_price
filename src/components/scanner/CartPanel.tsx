@@ -23,7 +23,7 @@ export function CartPanel({ summary, notPricedCount = 0, flash, onIncrement, onD
     : formatPrice(0, config.currency);
 
   return (
-    <section className="card wide" aria-label="Cart">
+    <section className="card wide" aria-label="Cart" id="cart">
       <div className={styles.cartHeader}>
         <h2>
           Cart <span className={styles.cartCount}>{itemCount === 1 ? '1 item' : `${itemCount} items`}</span>

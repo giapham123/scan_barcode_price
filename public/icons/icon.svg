@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Price Scanner app icon: barcode + price tag. Re-render PNGs with: npm run icons -->
+  <rect width="512" height="512" rx="112" fill="#2563eb"/>
+  <rect x="96" y="128" width="320" height="200" rx="24" fill="#fff"/>
+  <g fill="#1c1f24">
+    <rect x="132" y="160" width="14" height="136"/>
+    <rect x="158" y="160" width="7" height="136"/>
+    <rect x="176" y="160" width="21" height="136"/>
+    <rect x="208" y="160" width="7" height="136"/>
+    <rect x="226" y="160" width="14" height="136"/>
+    <rect x="252" y="160" width="7" height="136"/>
+    <rect x="270" y="160" width="21" height="136"/>
+    <rect x="302" y="160" width="7" height="136"/>
+    <rect x="320" y="160" width="14" height="136"/>
+    <rect x="346" y="160" width="7" height="136"/>
+    <rect x="364" y="160" width="14" height="136"/>
+  </g>
+  <rect x="80" y="226" width="352" height="10" rx="5" fill="#ef4444"/>
+  <text x="256" y="420" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="84" font-weight="700" fill="#fff">₫</text>
+</svg>

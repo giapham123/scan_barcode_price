@@ -1,4 +1,13 @@
-.toolbar { display: flex; gap: 8px; }
+.toolbar {
+  display: flex;
+  gap: 8px;
+  /* Search stays reachable while scrolling a long list. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0;
+  background: var(--surface);
+}
 .toolbar input { flex: 1; }
 .status { margin: 10px 0 4px; font-size: 0.9rem; color: var(--muted); }
 .list { list-style: none; margin: 0; padding: 0; }
@@ -8,6 +17,7 @@
   gap: 12px;
   align-items: center;
   padding: 10px 6px;
+  min-height: 64px;
   border-top: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;

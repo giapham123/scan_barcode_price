@@ -12,3 +12,8 @@
 .hint { margin: 0; font-size: 0.85rem; }
 .error { margin: 0; color: var(--bad); }
 .print { margin-right: auto; }
+
+/* Phones: a shorter photo box, so the fields need less scrolling. */
+@media (max-width: 600px) {
+  .photo { aspect-ratio: 16 / 10; }
+}

@@ -210,7 +210,8 @@ export function ProductEditorDialog({ request, onClose }: Props) {
             <input
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              inputMode="decimal"
+              // VND has no decimals: the plain number pad is enough.
+              inputMode={examplePrice(currency.trim().toUpperCase() || config.currency).includes('.') ? 'decimal' : 'numeric'}
               placeholder={examplePrice(currency.trim().toUpperCase() || config.currency)}
               autoComplete="off"
               data-autofocus={Boolean(existing) || undefined}

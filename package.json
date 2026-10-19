@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "next typegen && tsc --noEmit",
     "upload-data": "tsx --conditions=react-server scripts/upload-data-to-netlify.ts",
-    "convert-currency": "tsx --conditions=react-server scripts/convert-currency.ts"
+    "convert-currency": "tsx --conditions=react-server scripts/convert-currency.ts",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.4",
