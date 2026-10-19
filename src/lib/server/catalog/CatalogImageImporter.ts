@@ -47,7 +47,7 @@ export class CatalogImageImporter {
     let res: Response;
     try {
       // redirect: 'error' – a redirect could lead to a host that is not allowed.
-      res = await this.#fetch(rawUrl, { headers: { 'User-Agent': this.#userAgent }, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+      res = await this.#fetch(rawUrl, { headers: { 'User-Agent': this.#userAgent }, redirect: 'error', signal: AbortSignal.timeout(8_000) });
     } catch {
       throw new HttpError(502, 'Could not download the photo');
     }

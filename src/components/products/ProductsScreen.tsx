@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Barcode } from '@/domain/Barcode';
 import { Product, type ProductData } from '@/domain/Product';
+import { useAppEvent } from '@/components/providers/ServicesProvider';
 import { formatPrice } from '@/lib/format';
 import { ProductPhoto } from './ProductPhoto';
 import { useProductEditor } from './ProductEditorProvider';
@@ -13,6 +14,8 @@ import styles from './ProductsScreen.module.css';
 export function ProductsScreen({ initialProducts }: { initialProducts: ProductData[] }) {
   const editProduct = useProductEditor();
   const [products, setProducts] = useState(() => initialProducts.map(Product.fromJSON));
+  // Also picks up changes that finish later, e.g. a photo copied from the online database.
+  useAppEvent('product:saved', (saved) => setProducts((list) => [...list.filter((p) => p.barcode !== saved.barcode), saved]));
   const [query, setQuery] = useState('');
 
   const visible = useMemo(() => {

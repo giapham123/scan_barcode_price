@@ -6,6 +6,8 @@ import styles from './Scanner.module.css';
 
 interface Props {
   summary: CartSummary;
+  /** Scanned items still waiting for a price (see UnknownScansPanel); not in the total. */
+  notPricedCount?: number;
   /** The line that was just scanned; `seq` changes on every scan to replay the highlight. */
   flash: { barcode: string; seq: number } | null;
   onIncrement: (barcode: string) => void;
@@ -14,7 +16,7 @@ interface Props {
   onClear: () => void;
 }
 
-export function CartPanel({ summary, flash, onIncrement, onDecrement, onRemove, onClear }: Props) {
+export function CartPanel({ summary, notPricedCount = 0, flash, onIncrement, onDecrement, onRemove, onClear }: Props) {
   const { lines, itemCount, totals } = summary;
   const total = totals.length
     ? totals.map(({ amount, currency }) => formatPrice(amount, currency)).join(' + ')
@@ -72,6 +74,11 @@ export function CartPanel({ summary, flash, onIncrement, onDecrement, onRemove, 
         <span>Total</span>
         <strong aria-live="polite">{total}</strong>
       </div>
+      {notPricedCount > 0 && (
+        <p className={styles.notPriced}>
+          + {notPricedCount === 1 ? '1 item' : `${notPricedCount} items`} not priced yet (see “Not in your list”)
+        </p>
+      )}
     </section>
   );
 }

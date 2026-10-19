@@ -127,3 +127,27 @@
 .historyItem[data-status='not-found'] .historyPrice { color: var(--warn); }
 .historyItem[data-status='invalid'] .historyPrice,
 .historyItem[data-status='error'] .historyPrice { color: var(--bad); }
+
+/* ---- Not in your list ---- */
+.unknownLine {
+  display: grid;
+  /* Own areas: the photo / info / × pieces reuse cart styles that name these areas. */
+  grid-template-columns: auto 1fr auto auto;
+  grid-template-areas: 'photo info add remove';
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border);
+}
+.unknownAdd { grid-area: add; }
+/* Phones: name + × on top, the button below. */
+@media (max-width: 480px) {
+  .unknownLine {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'photo info remove' 'photo add add';
+    row-gap: 6px;
+  }
+  .unknownAdd { justify-self: start; padding: 6px 14px; }
+}
+.mono { font-family: var(--mono); }
+.notPriced { margin: 6px 0 0; text-align: right; color: var(--warn); font-size: 0.9rem; }

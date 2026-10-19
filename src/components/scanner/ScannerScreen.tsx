@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useReducer, useRef, useState, type FormEvent } from 'react';
+import { Barcode } from '@/domain/Barcode';
 import { cartReducer, EMPTY_CART, summarizeCart } from '@/domain/Cart';
 import { useAppEvent, useServices } from '@/components/providers/ServicesProvider';
 import { useProductEditor } from '@/components/products/ProductEditorProvider';
@@ -10,6 +11,8 @@ import { CameraPanel } from './CameraPanel';
 import { CartPanel } from './CartPanel';
 import { ResultCard, type ResultState } from './ResultCard';
 import { ScanHistory, type HistoryEntry } from './ScanHistory';
+import { addUnknownScan, removeUnknownScan, totalUnknown, unknownCount, type UnknownScans } from './unknownScans';
+import { UnknownScansPanel } from './UnknownScansPanel';
 import { useKeyboardScanner } from './useKeyboardScanner';
 import styles from './Scanner.module.css';
 
@@ -28,6 +31,8 @@ export function ScannerScreen() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [flash, setFlash] = useState<{ barcode: string; seq: number } | null>(null);
   const [code, setCode] = useState('');
+  // Scanned barcodes not in the product list yet: collected so scanning can go on.
+  const [unknown, setUnknown] = useState<UnknownScans>([]);
   const seq = useRef(0);
   const paused = useRef(false); // scans are ignored while the editor is open
 
@@ -47,9 +52,15 @@ export function ScannerScreen() {
     setResult(r);
     setHistory((h) => [{ id, at: new Date(), result: r }, ...h].slice(0, config.historySize));
     if (r.status === 'found') {
-      dispatch({ type: 'add', product: r.product });
+      // Scans made while it was still unknown (e.g. priced meanwhile on another phone) count too.
+      const earlier = unknownCount(unknown, r.product.barcode);
+      dispatch({ type: 'add', product: r.product, quantity: 1 + earlier });
+      if (earlier) setUnknown((list) => removeUnknownScan(list, r.product.barcode));
       setFlash({ barcode: r.product.barcode, seq: id });
       navigator.vibrate?.(60); // short buzz on phones so you know the scan counted
+    } else if (r.status === 'not-found') {
+      setUnknown((list) => addUnknownScan(list, r.code));
+      navigator.vibrate?.([60, 80, 60, 80, 60]); // three short buzzes: "not in your list"
     }
   });
 
@@ -67,8 +78,19 @@ export function ScannerScreen() {
     } finally {
       paused.current = false;
     }
-    // A newly added product is looked up like a fresh scan, so it lands in the cart.
-    if (saved && !request.product) await lookupService.lookup(saved.barcode);
+    if (!saved || request.product) return; // edits of existing products update via 'product:saved'
+
+    if (request.barcode) {
+      // A scanned-but-unknown product got its price: it joins the cart as often as it was scanned.
+      const quantity = Math.max(1, unknownCount(unknown, saved.barcode));
+      dispatch({ type: 'add', product: saved, quantity });
+      setUnknown((list) => removeUnknownScan(list, saved.barcode));
+      setResult({ status: 'found', code: saved.barcode, format: Barcode.parse(saved.barcode).format, product: saved });
+      setFlash({ barcode: saved.barcode, seq: ++seq.current });
+    } else {
+      // A product that got a new in-store barcode is looked up like a fresh scan, so it lands in the cart.
+      await lookupService.lookup(saved.barcode);
+    }
   }
 
   function submitCode(event: FormEvent) {
@@ -108,8 +130,15 @@ export function ScannerScreen() {
         />
       </section>
 
+      <UnknownScansPanel
+        items={unknown}
+        onAdd={(barcode) => void edit({ barcode })}
+        onDismiss={(barcode) => setUnknown((list) => removeUnknownScan(list, barcode))}
+      />
+
       <CartPanel
         summary={summary}
+        notPricedCount={totalUnknown(unknown)}
         flash={flash}
         onIncrement={(barcode) => dispatch({ type: 'increment', barcode })}
         onDecrement={(barcode) => dispatch({ type: 'decrement', barcode })}

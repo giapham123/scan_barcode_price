@@ -44,6 +44,8 @@ export class ProductEditService {
   readonly #api: ProductApiClient;
   readonly #cache: { invalidate(barcode: string): void } | null;
   readonly #events: EventBus<AppEvents> | null;
+  /** Background copy of an online photo still running, if any. */
+  #pendingImport: Promise<void> = Promise.resolve();
 
   constructor({
     api,
@@ -65,10 +67,17 @@ export class ProductEditService {
       ? await this.#api.save({ ...draft, barcode: draft.barcode })
       : await this.#createWithNewBarcode(draft);
 
+    if (photo.kind === 'import') {
+      // The online database's image server can be slow (10 s+): don't make the user wait.
+      // The product is saved now; its photo arrives later via another 'product:saved'.
+      this.#announce(product, createBarcode);
+      this.#pendingImport = this.#importInBackground(product.barcode, photo.url);
+      return product;
+    }
+
     try {
       if (photo.kind === 'remove' && product.imageUrl) product = await this.#api.removeImage(product.barcode);
       else if (photo.kind === 'replace') product = await this.#api.uploadImage(product.barcode, photo.image);
-      else if (photo.kind === 'import') product = await this.#api.importImage(product.barcode, photo.url);
     } catch (err) {
       this.#announce(product, createBarcode); // the product itself exists now
       throw new PhotoUploadError(product, err as Error);
@@ -92,6 +101,21 @@ export class ProductEditService {
       } catch (err) {
         if (!(err instanceof ApiError && err.status === 409) || attempt === MAX_BARCODE_ATTEMPTS) throw err;
       }
+    }
+  }
+
+  /** Settles when the latest background photo import is done (for tests). */
+  get pendingImport(): Promise<void> {
+    return this.#pendingImport;
+  }
+
+  async #importInBackground(barcode: string, url: string): Promise<void> {
+    try {
+      const product = await this.#api.importImage(barcode, url);
+      this.#announce(product, false);
+    } catch (err) {
+      // The product is saved; it just has no photo. One can be added later in the editor.
+      console.warn(`[photos] could not copy the online photo for ${barcode}`, err);
     }
   }
 

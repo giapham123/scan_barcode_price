@@ -186,11 +186,33 @@ describe('ProductEditService', () => {
     expect(api.calls).toEqual(['save 5449000000996', 'save 5449000000996', 'upload 5449000000996', 'save 5449000000996']);
   });
 
-  test('imports a photo from the online database when asked', async () => {
+  test('an online photo is copied in the background: the product is ready at once, the photo follows', async () => {
     const api = fakeApi();
-    const saved = await new ProductEditService({ api }).save(draft, { kind: 'import', url: 'https://images.openfoodfacts.org/1.jpg' });
+    const bus = new EventBus<AppEvents>();
+    const seen = recordEvents(bus);
+    const service = new ProductEditService({ api, eventBus: bus });
+
+    const saved = await service.save(draft, { kind: 'import', url: 'https://images.openfoodfacts.org/1.jpg' });
+    expect(saved.imageUrl).toBeNull(); // not waiting for the (possibly slow) image server
+    await service.pendingImport;
     expect(api.calls).toEqual(['save 5449000000996', 'import 5449000000996 https://images.openfoodfacts.org/1.jpg']);
-    expect(saved.imageUrl).toBe('/images/5449000000996-2.jpg');
+    const updates = seen.filter(([name]) => name === 'product:saved').map(([, p]) => (p as { imageUrl: string | null }).imageUrl);
+    expect(updates).toEqual([null, '/images/5449000000996-2.jpg']);
+  });
+
+  test('a failed online photo copy leaves the saved product without a photo, no error', async () => {
+    const api = fakeApi();
+    api.importImage = async () => Promise.reject(new Error('timeout'));
+    const service = new ProductEditService({ api });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const saved = await service.save(draft, { kind: 'import', url: 'https://images.openfoodfacts.org/1.jpg' });
+      await service.pendingImport;
+      expect(saved.name).toBe('Cola');
+    } finally {
+      console.warn = warn;
+    }
   });
 
   test('clears the cache entry and announces the change', async () => {
