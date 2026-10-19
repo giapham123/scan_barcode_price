@@ -17,3 +17,17 @@
 @media (max-width: 600px) {
   .photo { aspect-ratio: 16 / 10; }
 }
+
+/* Price field with the fixed ".000" ending (thousands shortcut for VND). */
+.priceInput { position: relative; display: flex; align-items: center; }
+.priceInput input { flex: 1; width: 100%; }
+.priceSuffix {
+  position: absolute;
+  right: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 16px;
+  pointer-events: none;
+}
+.priceInput:has(.priceSuffix) input { padding-right: 56px; text-align: right; }
+.pricePreview { margin: -4px 0 0; font-size: 1.1rem; font-weight: 700; color: var(--ok); font-variant-numeric: tabular-nums; }

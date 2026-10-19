@@ -25,6 +25,12 @@ export const config = Object.freeze({
   /** Default currency for new products and the empty cart total. */
   currency: 'VND',
 
+  /**
+   * Type prices without decimals (VND) in thousands: 15 means 15.000 ₫,
+   * 15,5 means 15.500 ₫. The form shows the ".000" after the number.
+   */
+  thousandsPriceInput: true,
+
   /** Number of recent scans kept in the history list. */
   historySize: 10,
 });

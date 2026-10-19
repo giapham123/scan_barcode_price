@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Barcode, InvalidBarcodeError } from '@/domain/Barcode';
-import { examplePrice, parsePrice } from '@/domain/Money';
+import { priceInputMode, readPriceInput, writePriceInput } from '@/domain/PriceInput';
 import type { Product } from '@/domain/Product';
 import { useServices } from '@/components/providers/ServicesProvider';
 import { AuthCancelledError } from '@/lib/client/api/ProductApiClient';
@@ -40,7 +40,10 @@ export function ProductEditorDialog({ request, onClose }: Props) {
   const [createBarcode, setCreateBarcode] = useState(Boolean(request.createBarcode) && canCreateBarcode);
   const [barcode, setBarcode] = useState(lockedBarcode);
   const [name, setName] = useState(existing?.name ?? '');
-  const [price, setPrice] = useState(existing ? String(existing.price) : '');
+  // VND prices are typed in thousands (15 -> 15.000 ₫) when config.thousandsPriceInput is on.
+  const [price, setPrice] = useState(() =>
+    existing ? writePriceInput(existing.price, priceInputMode(existing.currency, config.thousandsPriceInput)) : '',
+  );
   const [currency, setCurrency] = useState(existing?.currency ?? config.currency);
   const [unit, setUnit] = useState(existing?.unit ?? '');
   const [photo, setPhoto] = useState<PhotoChange>({ kind: 'keep' });
@@ -102,9 +105,9 @@ export function ProductEditorDialog({ request, onClose }: Props) {
     const code3 = currency.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(code3)) return 'Currency must be a 3-letter code, e.g. VND or USD.';
 
-    // "15.000" means fifteen thousand in VND, but 15 in some other currencies: read it per currency.
-    const value = parsePrice(price, code3);
-    if (value === null) return `Please enter a valid price, e.g. ${examplePrice(code3)}`;
+    const mode = priceInputMode(code3, config.thousandsPriceInput);
+    const value = readPriceInput(price, code3, mode);
+    if (value === null) return `Please enter a valid price, e.g. ${mode.example}`;
 
     return { barcode: code, name: name.trim(), price: value, currency: code3, unit: unit.trim() };
   }
@@ -130,6 +133,11 @@ export function ProductEditorDialog({ request, onClose }: Props) {
       setSaving(false);
     }
   }
+
+  const currencyCode = currency.trim().toUpperCase() || config.currency;
+  const priceMode = priceInputMode(currencyCode, config.thousandsPriceInput);
+  const typedPrice = /^[A-Z]{3}$/.test(currencyCode) ? readPriceInput(price, currencyCode, priceMode) : null;
+  const pricePreview = typedPrice !== null && price.trim() ? formatPrice(typedPrice, currencyCode) : null;
 
   const title = existing ? 'Edit product' : createBarcode ? 'New product without barcode' : 'Add product';
 
@@ -207,15 +215,18 @@ export function ProductEditorDialog({ request, onClose }: Props) {
         <div className={styles.priceRow}>
           <label className="field">
             Price
-            <input
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              // VND has no decimals: the plain number pad is enough.
-              inputMode={examplePrice(currency.trim().toUpperCase() || config.currency).includes('.') ? 'decimal' : 'numeric'}
-              placeholder={examplePrice(currency.trim().toUpperCase() || config.currency)}
-              autoComplete="off"
-              data-autofocus={Boolean(existing) || undefined}
-            />
+            <span className={styles.priceInput}>
+              <input
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                inputMode={priceMode.keyboard}
+                placeholder={priceMode.example}
+                autoComplete="off"
+                data-autofocus={Boolean(existing) || undefined}
+              />
+              {/* The zeros you don't have to type: 15 -> 15.000 */}
+              {priceMode.suffix && <span className={styles.priceSuffix} aria-hidden="true">{priceMode.suffix}</span>}
+            </span>
           </label>
           <label className="field">
             Currency
@@ -227,6 +238,11 @@ export function ProductEditorDialog({ request, onClose }: Props) {
             />
           </label>
         </div>
+        {pricePreview && (
+          <p className={styles.pricePreview} aria-live="polite">
+            = {pricePreview}
+          </p>
+        )}
         {existing && (
           <p className={`muted ${styles.hint}`}>
             Current price: {formatPrice(existing.price, existing.currency)}
