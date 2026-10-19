@@ -10,8 +10,9 @@ import {
   StorageTimeoutError,
 } from './errors';
 
-export const MAX_JSON_BYTES = 64 * 1024;
-export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+import { MAX_JSON_BYTES } from './limits';
+
+export { MAX_IMAGE_BYTES, MAX_JSON_BYTES } from './limits';
 
 /**
  * Wraps a route handler: any thrown error becomes a JSON error response

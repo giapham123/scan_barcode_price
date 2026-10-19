@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "next typegen && tsc --noEmit",
-    "upload-data": "tsx --conditions=react-server scripts/upload-data-to-netlify.ts"
+    "upload-data": "tsx --conditions=react-server scripts/upload-data-to-netlify.ts",
+    "convert-currency": "tsx --conditions=react-server scripts/convert-currency.ts"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.4",

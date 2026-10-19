@@ -5,7 +5,7 @@ import type { BarcodeAllocator } from './BarcodeAllocator';
 import { CatalogImageImporter } from './catalog/CatalogImageImporter';
 import { OPEN_FACTS_DATABASES, OPEN_FACTS_IMAGE_HOSTS, OpenFactsCatalog } from './catalog/OpenFactsCatalog';
 import { CachedCatalog, FallbackCatalog, type ProductCatalog } from './catalog/ProductCatalog';
-import { MAX_IMAGE_BYTES } from './http';
+import { MAX_IMAGE_BYTES } from './limits';
 import { FileProductStore } from './FileProductStore';
 import { InternalBarcodeAllocator } from './InternalBarcodeAllocator';
 import { NetlifyBlobsProductStore } from './NetlifyBlobsProductStore';
